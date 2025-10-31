@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  smarttub-mqtt:
+    build: .
+    container_name: smarttub-mqtt
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
