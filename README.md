@@ -1,6 +1,13 @@
 ````markdown
 # smarttub-mqtt
 
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Habnix/smarttub-mqtt/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com/r/willnix/smarttub-mqtt)
+[![Docker Pulls](https://img.shields.io/docker/pulls/willnix/smarttub-mqtt)](https://hub.docker.com/r/willnix/smarttub-mqtt)
+[![GitHub Stars](https://img.shields.io/github/stars/Habnix/smarttub-mqtt?style=social)](https://github.com/Habnix/smarttub-mqtt)
+
 A robust MQTT bridge for SmartTub hot tubs providing extensive telemetry, control and error handling.
 
 ## Features
