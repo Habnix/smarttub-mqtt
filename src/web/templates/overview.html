@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartTub MQTT Bridge - Overview</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .component-card {
+            transition: all 0.3s ease;
+        }
+        .component-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-on { background-color: #28a745; }
+        .status-off { background-color: #6c757d; }
+        .status-error { background-color: #dc3545; }
+        .status-unknown { background-color: #ffc107; }
+        .temperature-display {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        /* helper classes to avoid putting Jinja inside style attributes */
+        .w-0 { width: 0% !important; }
+        .w-100 { width: 100% !important; }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-water me-2"></i>
+                SmartTub MQTT Bridge
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    Last updated: <span id="last-updated">{{ last_updated }}</span>
+                </span>
+                <a class="nav-link" href="/api/state" target="_blank">API</a>
+            </div>
+        </div>
+    </nav>
+
+    <div id="state-container" class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-4">Whirlpool Status Overview</h1>
+            </div>
+        </div>
+
+        <!-- Spa Status Card -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card component-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="card-title mb-0">
+                            <span class="status-indicator status-{{ 'on' if state.components.spa.state != 'unknown' else 'unknown' }}"></span>
+                            Spa System
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div class="temperature-display text-primary">
+                                        {{ "%.1f"|format(state.components.spa.water_temperature or 0) }}°C
+                                    </div>
+                                    <small class="text-muted">Water Temperature</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <div class="temperature-display text-info">
+                                        {{ "%.1f"|format(state.components.spa.air_temperature or 0) }}°C
+                                    </div>
+                                    <small class="text-muted">Air Temperature</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-center">
+                                    <span class="badge fs-5 {{ 'bg-success' if state.components.spa.state == 'ready' else ('bg-warning' if state.components.spa.state == 'heating' else 'bg-secondary') }}">
+                                        {{ state.components.spa.state|title }}
+                                    </span>
+                                    <br><small class="text-muted">System State</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Component Cards Row -->
+        <div class="row">
+            {% for spa_id, spa_caps in capabilities.items() %}
+            <!-- Heater Card -->
+            {% if spa_caps.supported_features.heater %}
+            <div class="col-md-4 mb-4">
+                <div class="card component-card h-100">
+                    <div class="card-header {{ 'bg-danger text-white' if state.components.heater.state == 'on' else 'bg-light' }}">
+                        <h5 class="card-title mb-0">
+                            <span class="status-indicator status-{{ 'on' if state.components.heater.state == 'on' else 'off' }}"></span>
+                            Heater
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <div class="temperature-display text-danger">
+                                {{ "%.1f"|format(state.components.spa.water_temperature or 0) }}°C
+                            </div>
+                            <small class="text-muted">Current Temperature</small>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted">
+                                Target: {{ "%.1f"|format(state.components.heater.target_temperature or 0) }}°C
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="progress">
+                                <div class="progress-bar {{ 'bg-danger w-100' if state.components.heater.state == 'on' else 'bg-secondary w-0' }}">
+                                </div>
+                            </div>
+                            <small class="text-center d-block mt-1 {{ 'text-danger' if state.components.heater.state == 'on' else 'text-muted' }}">
+                                {{ 'Active' if state.components.heater.state == 'on' else 'Inactive' }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Pump Cards -->
+            {% if spa_caps.supported_features.pump %}
+            {% for pump in state.components.pumps %}
+            <div class="col-md-4 mb-4">
+                <div class="card component-card h-100">
+                    {% set _pump_state = (pump.state|default('off')|lower) %}
+                    <div class="card-header {{ 'bg-primary text-white' if _pump_state in ['running','on','high','low'] else 'bg-light' }}">
+                        <h5 class="card-title mb-0">
+                            <span class="status-indicator status-{{ 'on' if pump.state == 'running' else 'off' }}"></span>
+                            {{ pump.type|title }} Pump ({{ pump.id }})
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <span class="badge fs-4 {{ 'bg-primary' if _pump_state in ['running','on','high','low'] else 'bg-secondary' }}">
+                                {{ pump.state|default('Unknown')|title }}
+                            </span>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted">
+                                Speed: {{ pump.speed|default('N/A')|title }}
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="progress">
+                                <div class="progress-bar {{ 'bg-primary w-100' if _pump_state in ['running','on','high','low'] else 'bg-secondary w-0' }}">
+                                </div>
+                            </div>
+                            <small class="text-muted text-center d-block mt-1">
+                                {{ 'Running' if _pump_state in ['running','on','high','low'] else 'Stopped' }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+
+            <!-- Light Cards -->
+            {% if spa_caps.supported_features.light %}
+            {% for light in state.components.lights %}
+            <div class="col-md-4 mb-4">
+                <div class="card component-card h-100">
+                    {% set _light_state = (light.state|default(light.mode|default('off'))|lower) %}
+                    <div class="card-header {{ 'bg-warning text-dark' if _light_state == 'on' else 'bg-light' }}">
+                        <h5 class="card-title mb-0">
+                            <span class="status-indicator status-{{ 'on' if light.state == 'on' else 'off' }}"></span>
+                            {{ light.type|title }} Light (Zone {{ light.zone }})
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <div class="display-6" data-color="{{ light.color|default('#6c757d') }}">
+                                💡
+                            </div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted">
+                                Color: {{ light.color|default('N/A')|title }}
+                            </div>
+                            <div class="text-muted">
+                                Brightness: {{ light.brightness|default(0) }}%
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="progress">
+                                <div class="progress-bar {{ 'bg-warning' if _light_state == 'on' else 'bg-secondary' }}" data-brightness="{{ light.brightness|default(0) }}">
+                                </div>
+                            </div>
+                            <small class="text-muted text-center d-block mt-1">
+                                {{ 'On' if _light_state == 'on' else 'Off' }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        {% if not capabilities %}
+        <!-- Fallback rendering when capabilities are not yet detected: show components from state directly -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="alert alert-warning">
+                    <h5><i class="fas fa-info-circle me-2"></i>Capabilities pending — showing detected components</h5>
+                    <p>The capability detector is still initializing. Below are the components discovered from the current state snapshot.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <!-- Heater (fallback) -->
+            {% if state.components.heater %}
+            <div class="col-md-4 mb-4">
+                <div class="card component-card h-100">
+                    <div class="card-header {{ 'bg-danger text-white' if state.components.heater.state == 'on' else 'bg-light' }}">
+                        <h5 class="card-title mb-0">
+                            <span class="status-indicator status-{{ 'on' if state.components.heater.state == 'on' else 'off' }}"></span>
+                            Heater
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center mb-3">
+                            <div class="temperature-display text-danger">
+                                {{ "%.1f"|format(state.components.spa.water_temperature or 0) }}°C
+                            </div>
+                            <small class="text-muted">Current Temperature</small>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-muted">Target: {{ "%.1f"|format(state.components.heater.target_temperature or 0) }}°C</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Pumps (fallback) -->
+            {% if state.components.pumps %}
+                {% for pump in state.components.pumps %}
+                <div class="col-md-4 mb-4">
+                    <div class="card component-card h-100">
+                        {% set _pump_state = (pump.state|default('off')|lower) %}
+                        <div class="card-header {{ 'bg-primary text-white' if _pump_state in ['running','on','high','low'] else 'bg-light' }}">
+                            <h5 class="card-title mb-0">
+                                <span class="status-indicator status-{{ 'on' if pump.state == 'running' else 'off' }}"></span>
+                                {{ pump.type|title }} Pump ({{ pump.id }})
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="text-center mb-3">
+                                <span class="badge fs-4 {{ 'bg-primary' if _pump_state in ['running','on','high','low'] else 'bg-secondary' }}">{{ pump.state|default('Unknown')|title }}</span>
+                            </div>
+                            <div class="text-center text-muted">Speed: {{ pump.speed|default('N/A')|title }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- Lights (fallback) -->
+            {% if state.components.lights %}
+                {% for light in state.components.lights %}
+                <div class="col-md-4 mb-4">
+                    <div class="card component-card h-100">
+                        {% set _light_state = (light.state|default(light.mode|default('off'))|lower) %}
+                        <div class="card-header {{ 'bg-warning text-dark' if _light_state == 'on' else 'bg-light' }}">
+                            <h5 class="card-title mb-0">
+                                <span class="status-indicator status-{{ 'on' if light.state == 'on' else 'off' }}"></span>
+                                {{ light.type|title }} Light (Zone {{ light.zone }})
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="text-center mb-3">
+                                <div class="display-6" data-color="{{ light.color|default('#6c757d') }}">💡</div>
+                            </div>
+                            <div class="text-center text-muted">Color: {{ light.color|default('N/A')|title }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% endif %}
+
+        </div>
+        {% endif %}
+
+        <!-- MQTT Topics Info -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">MQTT Topics</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-2"><strong>Base Topic:</strong> <code>{{ config.mqtt.base_topic }}</code></p>
+                        <p class="mb-0"><strong>State Topics:</strong></p>
+                        <ul class="list-unstyled">
+                            <li><code>{{ config.mqtt.base_topic }}/heater/state</code></li>
+                            <li><code>{{ config.mqtt.base_topic }}/pump/state</code></li>
+                            <li><code>{{ config.mqtt.base_topic }}/light/state</code></li>
+                            <li><code>{{ config.mqtt.base_topic }}/spa/state</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HTMX for live updates -->
+    <script>
+        // Auto-refresh state every 30 seconds
+        setInterval(function() {
+            htmx.ajax('GET', '/api/state', {
+                target: '#state-container',
+                swap: 'innerHTML'
+            });
+            document.getElementById('last-updated').textContent = new Date().toISOString();
+        }, 30000);
+    </script>
+
+    <script>
+        // Apply dynamic colors / widths from data attributes to avoid Jinja in style attributes
+        document.addEventListener('DOMContentLoaded', function() {
+            // set width from data-brightness
+            document.querySelectorAll('.progress-bar[data-brightness]').forEach(function(el) {
+                var v = parseInt(el.getAttribute('data-brightness') || '0', 10);
+                if (!isNaN(v)) el.style.width = v + '%';
+            });
+            // set color from data-color
+            document.querySelectorAll('[data-color]').forEach(function(el) {
+                var c = el.getAttribute('data-color');
+                if (c) el.style.color = c;
+            });
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

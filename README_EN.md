@@ -78,12 +78,14 @@ logging:
   level: info
 EOF
 
-# 4. Start container
-docker run -d \
-  --name smarttub-mqtt \
-  --restart unless-stopped \
-  -v /opt/smarttub-mqtt/config:/config \
-  -p 8080:8080 \
+Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+---
+**Status**: Production Ready ✅
+**Version**: 0.1
+**Last Updated**: October 31, 2025
+
+**Acknowledgements**: Thanks to Matt Zimmerman for python-smarttub (https://github.com/mzimmerman/python-smarttub)
   smarttub-mqtt:latest
 ```
 
@@ -490,5 +492,9 @@ Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 ---
 
 **Status**: Production Ready ✅
-**Version**: 1.0.0
-**Last Updated**: October 30, 2025
+**Version**: 0.1
+**Last Updated**: October 31, 2025
+
+## Acknowledgements
+
+Thanks to Matt Zimmerman for the python-smarttub API used to interact with SmartTub devices: https://github.com/mdz/python-smarttub

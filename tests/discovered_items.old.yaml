@@ -1,0 +1,867 @@
+discovered_items:
+  '100946961':
+    capabilities:
+      light_intensity:
+        example: 50
+        max: 100
+        min: 0
+      light_modes:
+      - PURPLE
+      - ORANGE
+      - RED
+      - YELLOW
+      - GREEN
+      - AQUA
+      - BLUE
+      - WHITE
+      - AMBER
+      - HIGH_SPEED_COLOR_WHEEL
+      - HIGH_SPEED_WHEEL
+      - LOW_SPEED_WHEEL
+      - FULL_DYNAMIC_RGB
+      - AUTO_TIMER_EXTERIOR
+      - PARTY
+      - COLOR_WHEEL
+      - 'OFF'
+      - 'ON'
+      pump_states:
+      - 'OFF'
+      - LOW
+      - HIGH
+      pump_types:
+      - BLOWER
+      - CIRCULATION
+      - JET
+    discovered_at: '2025-10-25T15:54:27.960125+00:00'
+    heater:
+      present: true
+      water_temperature: 29.5
+    lights:
+    - id: null
+      raw:
+        blue: 170
+        green: 170
+        intensity: 0
+        mode: {}
+        properties:
+          color:
+            blue: 170
+            green: 170
+            red: 170
+            white: 0
+          createdBy: SYSTEM
+          cycleSpeed: 0
+          exterior: true
+          intensity: 0
+          irt: 0
+          lastUpdated: '2025-10-25T07:26:29.351Z'
+          lightExt: null
+          mode: 'OFF'
+          zone: 2
+          zoneType: EXTERIOR
+        red: 170
+        spa:
+          account:
+            email: ulf.tritthart@gmx.de
+            id: 2f7477ea-2519-497f-8311-8c166241c308
+            properties:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+          brand: D1
+          id: '100946961'
+          model: Chairman
+          name: D1 Chairman
+          properties:
+            _b402Upgrade: false
+            adapter: 'OFF'
+            appSettings: null
+            avgAmbientTemp: null
+            bp100: false
+            brand: D1
+            buyReminders: null
+            cabinetColor: E
+            coolingRate: 3.66e-07
+            coupon: []
+            cover: null
+            createdAt: '2023-02-25T01:36:54.87'
+            createdSource: MANUFACTURING
+            current:
+              average: 0.0
+              kwh: 0.008
+              max: 0.0
+              min: 0.0
+              value: 0.0
+            dealer:
+              activeDealerAccount: true
+              address:
+                city: ACHIM
+                country: DE
+                state: null
+                street: HERBERT-LUDWIG-STR. 2 BORSTEL
+                zip: '28832'
+              createdAt: '2020-03-10T22:35:38.33989'
+              dealerNumber: '706084'
+              email: bas@lifepark.com
+              id: 001G000001Ux55iIAB
+              name: Whirlpool & Living Gmbh
+              phone: 01149429781820
+              updatedAt: '2024-09-19T19:20:11.584965'
+              website: null
+            dealerId: 001G000001Ux55iIAB
+            device:
+              activated: true
+              barcode: P034AD221PD9WKM
+              baseCountryCode: null
+              carrier: twilio_supersim
+              firstActivatedOn: '2022-06-01T18:07:53.505Z'
+              id: e00fce686878d6f2757f3302
+              lastActivatedOn: '2023-02-27T18:46:50.693Z'
+              mobileSecret: null
+              simIccId: '89883070000021665656'
+            deviceId: e00fce686878d6f2757f3302
+            deviceOnline: true
+            deviceOptIn: true
+            ecomode: false
+            equipmentOption: P
+            heaterWatts: 1024
+            id: '100946961'
+            ir: false
+            lastUpdated: '2025-10-25T15:26:21.975Z'
+            location: null
+            model: Chairman
+            modelNumber: 2121PEHEMT
+            name: Jule
+            nano: false
+            onboard: null
+            owner:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+            ownerId: 2f7477ea-2519-497f-8311-8c166241c308
+            pairedAt: '2023-08-03T10:55:22.763Z'
+            powerResetRequired: false
+            productIdOrSlug: smarttub-ble-global-16000
+            revision: H
+            selfTest:
+              current:
+                blower: -99.9
+                circulationPump: 0.0
+                heaterAndCirculationPump: -99.9
+                jets:
+                - current: 0.0
+                  pumpId: P1
+                  spaId: '100946961'
+                - current: 0.0
+                  pumpId: P2
+                  spaId: '100946961'
+                ozone: null
+                ultraviolet: null
+              frequency: DAILY
+              lastTestTime: '2025-10-25T12:04:00Z'
+              startTime: null
+              status: FAIL
+            series: Reflections
+            signal: null
+            smEnable: false
+            stereo: false
+            subscriptionExpiredAt: '2026-08-04T10:55:22.763Z'
+            subscriptions:
+            - end: '2026-08-04T10:55:22.763Z'
+              start: '2025-08-03T10:55:22.763Z'
+              type: 1_YR_CELLULAR
+            sutro: null
+            tubColor: 21
+            us3G: false
+            voltage: 220
+            volume: 420
+            warrantyDate: '2023-08-03'
+            water:
+              oxidationReductionPotential: null
+              ph: null
+              temperature: 29.5
+              temperatureLastUpdated: '2025-10-25T10:26:26.035Z'
+              turbidity: null
+        white: 0
+        zone: 2
+    - id: null
+      raw:
+        blue: 170
+        green: 170
+        intensity: 0
+        mode: {}
+        properties:
+          color:
+            blue: 170
+            green: 170
+            red: 170
+            white: 0
+          createdBy: SYSTEM
+          cycleSpeed: 0
+          exterior: false
+          intensity: 0
+          irt: 0
+          lastUpdated: '2025-10-25T07:26:29.351Z'
+          lightExt: null
+          mode: 'OFF'
+          zone: 1
+          zoneType: INTERIOR
+        red: 170
+        spa:
+          account:
+            email: ulf.tritthart@gmx.de
+            id: 2f7477ea-2519-497f-8311-8c166241c308
+            properties:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+          brand: D1
+          id: '100946961'
+          model: Chairman
+          name: D1 Chairman
+          properties:
+            _b402Upgrade: false
+            adapter: 'OFF'
+            appSettings: null
+            avgAmbientTemp: null
+            bp100: false
+            brand: D1
+            buyReminders: null
+            cabinetColor: E
+            coolingRate: 3.66e-07
+            coupon: []
+            cover: null
+            createdAt: '2023-02-25T01:36:54.87'
+            createdSource: MANUFACTURING
+            current:
+              average: 0.0
+              kwh: 0.008
+              max: 0.0
+              min: 0.0
+              value: 0.0
+            dealer:
+              activeDealerAccount: true
+              address:
+                city: ACHIM
+                country: DE
+                state: null
+                street: HERBERT-LUDWIG-STR. 2 BORSTEL
+                zip: '28832'
+              createdAt: '2020-03-10T22:35:38.33989'
+              dealerNumber: '706084'
+              email: bas@lifepark.com
+              id: 001G000001Ux55iIAB
+              name: Whirlpool & Living Gmbh
+              phone: 01149429781820
+              updatedAt: '2024-09-19T19:20:11.584965'
+              website: null
+            dealerId: 001G000001Ux55iIAB
+            device:
+              activated: true
+              barcode: P034AD221PD9WKM
+              baseCountryCode: null
+              carrier: twilio_supersim
+              firstActivatedOn: '2022-06-01T18:07:53.505Z'
+              id: e00fce686878d6f2757f3302
+              lastActivatedOn: '2023-02-27T18:46:50.693Z'
+              mobileSecret: null
+              simIccId: '89883070000021665656'
+            deviceId: e00fce686878d6f2757f3302
+            deviceOnline: true
+            deviceOptIn: true
+            ecomode: false
+            equipmentOption: P
+            heaterWatts: 1024
+            id: '100946961'
+            ir: false
+            lastUpdated: '2025-10-25T15:26:21.975Z'
+            location: null
+            model: Chairman
+            modelNumber: 2121PEHEMT
+            name: Jule
+            nano: false
+            onboard: null
+            owner:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+            ownerId: 2f7477ea-2519-497f-8311-8c166241c308
+            pairedAt: '2023-08-03T10:55:22.763Z'
+            powerResetRequired: false
+            productIdOrSlug: smarttub-ble-global-16000
+            revision: H
+            selfTest:
+              current:
+                blower: -99.9
+                circulationPump: 0.0
+                heaterAndCirculationPump: -99.9
+                jets:
+                - current: 0.0
+                  pumpId: P1
+                  spaId: '100946961'
+                - current: 0.0
+                  pumpId: P2
+                  spaId: '100946961'
+                ozone: null
+                ultraviolet: null
+              frequency: DAILY
+              lastTestTime: '2025-10-25T12:04:00Z'
+              startTime: null
+              status: FAIL
+            series: Reflections
+            signal: null
+            smEnable: false
+            stereo: false
+            subscriptionExpiredAt: '2026-08-04T10:55:22.763Z'
+            subscriptions:
+            - end: '2026-08-04T10:55:22.763Z'
+              start: '2025-08-03T10:55:22.763Z'
+              type: 1_YR_CELLULAR
+            sutro: null
+            tubColor: 21
+            us3G: false
+            voltage: 220
+            volume: 420
+            warrantyDate: '2023-08-03'
+            water:
+              oxidationReductionPotential: null
+              ph: null
+              temperature: 29.5
+              temperatureLastUpdated: '2025-10-25T10:26:26.035Z'
+              turbidity: null
+        white: 0
+        zone: 1
+    pumps:
+    - id: P1
+      raw:
+        id: P1
+        properties:
+          id: P1
+          lastUpdated: '2025-10-25T09:45:03.715Z'
+          speed: ONE_SPEED
+          state: 'OFF'
+          type: JET
+        spa:
+          account:
+            email: ulf.tritthart@gmx.de
+            id: 2f7477ea-2519-497f-8311-8c166241c308
+            properties:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+          brand: D1
+          id: '100946961'
+          model: Chairman
+          name: D1 Chairman
+          properties:
+            _b402Upgrade: false
+            adapter: 'OFF'
+            appSettings: null
+            avgAmbientTemp: null
+            bp100: false
+            brand: D1
+            buyReminders: null
+            cabinetColor: E
+            coolingRate: 3.66e-07
+            coupon: []
+            cover: null
+            createdAt: '2023-02-25T01:36:54.87'
+            createdSource: MANUFACTURING
+            current:
+              average: 0.0
+              kwh: 0.008
+              max: 0.0
+              min: 0.0
+              value: 0.0
+            dealer:
+              activeDealerAccount: true
+              address:
+                city: ACHIM
+                country: DE
+                state: null
+                street: HERBERT-LUDWIG-STR. 2 BORSTEL
+                zip: '28832'
+              createdAt: '2020-03-10T22:35:38.33989'
+              dealerNumber: '706084'
+              email: bas@lifepark.com
+              id: 001G000001Ux55iIAB
+              name: Whirlpool & Living Gmbh
+              phone: 01149429781820
+              updatedAt: '2024-09-19T19:20:11.584965'
+              website: null
+            dealerId: 001G000001Ux55iIAB
+            device:
+              activated: true
+              barcode: P034AD221PD9WKM
+              baseCountryCode: null
+              carrier: twilio_supersim
+              firstActivatedOn: '2022-06-01T18:07:53.505Z'
+              id: e00fce686878d6f2757f3302
+              lastActivatedOn: '2023-02-27T18:46:50.693Z'
+              mobileSecret: null
+              simIccId: '89883070000021665656'
+            deviceId: e00fce686878d6f2757f3302
+            deviceOnline: true
+            deviceOptIn: true
+            ecomode: false
+            equipmentOption: P
+            heaterWatts: 1024
+            id: '100946961'
+            ir: false
+            lastUpdated: '2025-10-25T15:26:21.975Z'
+            location: null
+            model: Chairman
+            modelNumber: 2121PEHEMT
+            name: Jule
+            nano: false
+            onboard: null
+            owner:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+            ownerId: 2f7477ea-2519-497f-8311-8c166241c308
+            pairedAt: '2023-08-03T10:55:22.763Z'
+            powerResetRequired: false
+            productIdOrSlug: smarttub-ble-global-16000
+            revision: H
+            selfTest:
+              current:
+                blower: -99.9
+                circulationPump: 0.0
+                heaterAndCirculationPump: -99.9
+                jets:
+                - current: 0.0
+                  pumpId: P1
+                  spaId: '100946961'
+                - current: 0.0
+                  pumpId: P2
+                  spaId: '100946961'
+                ozone: null
+                ultraviolet: null
+              frequency: DAILY
+              lastTestTime: '2025-10-25T12:04:00Z'
+              startTime: null
+              status: FAIL
+            series: Reflections
+            signal: null
+            smEnable: false
+            stereo: false
+            subscriptionExpiredAt: '2026-08-04T10:55:22.763Z'
+            subscriptions:
+            - end: '2026-08-04T10:55:22.763Z'
+              start: '2025-08-03T10:55:22.763Z'
+              type: 1_YR_CELLULAR
+            sutro: null
+            tubColor: 21
+            us3G: false
+            voltage: 220
+            volume: 420
+            warrantyDate: '2023-08-03'
+            water:
+              oxidationReductionPotential: null
+              ph: null
+              temperature: 29.5
+              temperatureLastUpdated: '2025-10-25T10:26:26.035Z'
+              turbidity: null
+        speed: ONE_SPEED
+        state: {}
+        type: {}
+    - id: CP
+      raw:
+        id: CP
+        properties:
+          id: CP
+          lastUpdated: '2025-10-24T13:35:11.957Z'
+          speed: ONE_SPEED
+          state: HIGH
+          type: CIRCULATION
+        spa:
+          account:
+            email: ulf.tritthart@gmx.de
+            id: 2f7477ea-2519-497f-8311-8c166241c308
+            properties:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+          brand: D1
+          id: '100946961'
+          model: Chairman
+          name: D1 Chairman
+          properties:
+            _b402Upgrade: false
+            adapter: 'OFF'
+            appSettings: null
+            avgAmbientTemp: null
+            bp100: false
+            brand: D1
+            buyReminders: null
+            cabinetColor: E
+            coolingRate: 3.66e-07
+            coupon: []
+            cover: null
+            createdAt: '2023-02-25T01:36:54.87'
+            createdSource: MANUFACTURING
+            current:
+              average: 0.0
+              kwh: 0.008
+              max: 0.0
+              min: 0.0
+              value: 0.0
+            dealer:
+              activeDealerAccount: true
+              address:
+                city: ACHIM
+                country: DE
+                state: null
+                street: HERBERT-LUDWIG-STR. 2 BORSTEL
+                zip: '28832'
+              createdAt: '2020-03-10T22:35:38.33989'
+              dealerNumber: '706084'
+              email: bas@lifepark.com
+              id: 001G000001Ux55iIAB
+              name: Whirlpool & Living Gmbh
+              phone: 01149429781820
+              updatedAt: '2024-09-19T19:20:11.584965'
+              website: null
+            dealerId: 001G000001Ux55iIAB
+            device:
+              activated: true
+              barcode: P034AD221PD9WKM
+              baseCountryCode: null
+              carrier: twilio_supersim
+              firstActivatedOn: '2022-06-01T18:07:53.505Z'
+              id: e00fce686878d6f2757f3302
+              lastActivatedOn: '2023-02-27T18:46:50.693Z'
+              mobileSecret: null
+              simIccId: '89883070000021665656'
+            deviceId: e00fce686878d6f2757f3302
+            deviceOnline: true
+            deviceOptIn: true
+            ecomode: false
+            equipmentOption: P
+            heaterWatts: 1024
+            id: '100946961'
+            ir: false
+            lastUpdated: '2025-10-25T15:26:21.975Z'
+            location: null
+            model: Chairman
+            modelNumber: 2121PEHEMT
+            name: Jule
+            nano: false
+            onboard: null
+            owner:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+            ownerId: 2f7477ea-2519-497f-8311-8c166241c308
+            pairedAt: '2023-08-03T10:55:22.763Z'
+            powerResetRequired: false
+            productIdOrSlug: smarttub-ble-global-16000
+            revision: H
+            selfTest:
+              current:
+                blower: -99.9
+                circulationPump: 0.0
+                heaterAndCirculationPump: -99.9
+                jets:
+                - current: 0.0
+                  pumpId: P1
+                  spaId: '100946961'
+                - current: 0.0
+                  pumpId: P2
+                  spaId: '100946961'
+                ozone: null
+                ultraviolet: null
+              frequency: DAILY
+              lastTestTime: '2025-10-25T12:04:00Z'
+              startTime: null
+              status: FAIL
+            series: Reflections
+            signal: null
+            smEnable: false
+            stereo: false
+            subscriptionExpiredAt: '2026-08-04T10:55:22.763Z'
+            subscriptions:
+            - end: '2026-08-04T10:55:22.763Z'
+              start: '2025-08-03T10:55:22.763Z'
+              type: 1_YR_CELLULAR
+            sutro: null
+            tubColor: 21
+            us3G: false
+            voltage: 220
+            volume: 420
+            warrantyDate: '2023-08-03'
+            water:
+              oxidationReductionPotential: null
+              ph: null
+              temperature: 29.5
+              temperatureLastUpdated: '2025-10-25T10:26:26.035Z'
+              turbidity: null
+        speed: ONE_SPEED
+        state: {}
+        type: {}
+    - id: P2
+      raw:
+        id: P2
+        properties:
+          id: P2
+          lastUpdated: '2025-10-12T08:33:35.836Z'
+          speed: ONE_SPEED
+          state: 'OFF'
+          type: JET
+        spa:
+          account:
+            email: ulf.tritthart@gmx.de
+            id: 2f7477ea-2519-497f-8311-8c166241c308
+            properties:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+          brand: D1
+          id: '100946961'
+          model: Chairman
+          name: D1 Chairman
+          properties:
+            _b402Upgrade: false
+            adapter: 'OFF'
+            appSettings: null
+            avgAmbientTemp: null
+            bp100: false
+            brand: D1
+            buyReminders: null
+            cabinetColor: E
+            coolingRate: 3.66e-07
+            coupon: []
+            cover: null
+            createdAt: '2023-02-25T01:36:54.87'
+            createdSource: MANUFACTURING
+            current:
+              average: 0.0
+              kwh: 0.008
+              max: 0.0
+              min: 0.0
+              value: 0.0
+            dealer:
+              activeDealerAccount: true
+              address:
+                city: ACHIM
+                country: DE
+                state: null
+                street: HERBERT-LUDWIG-STR. 2 BORSTEL
+                zip: '28832'
+              createdAt: '2020-03-10T22:35:38.33989'
+              dealerNumber: '706084'
+              email: bas@lifepark.com
+              id: 001G000001Ux55iIAB
+              name: Whirlpool & Living Gmbh
+              phone: 01149429781820
+              updatedAt: '2024-09-19T19:20:11.584965'
+              website: null
+            dealerId: 001G000001Ux55iIAB
+            device:
+              activated: true
+              barcode: P034AD221PD9WKM
+              baseCountryCode: null
+              carrier: twilio_supersim
+              firstActivatedOn: '2022-06-01T18:07:53.505Z'
+              id: e00fce686878d6f2757f3302
+              lastActivatedOn: '2023-02-27T18:46:50.693Z'
+              mobileSecret: null
+              simIccId: '89883070000021665656'
+            deviceId: e00fce686878d6f2757f3302
+            deviceOnline: true
+            deviceOptIn: true
+            ecomode: false
+            equipmentOption: P
+            heaterWatts: 1024
+            id: '100946961'
+            ir: false
+            lastUpdated: '2025-10-25T15:26:21.975Z'
+            location: null
+            model: Chairman
+            modelNumber: 2121PEHEMT
+            name: Jule
+            nano: false
+            onboard: null
+            owner:
+              atEaseEnabled: false
+              cognitoSub: fcaef1e3-dd20-4529-9b4b-6462ce5ae044
+              email: ulf.tritthart@gmx.de
+              emailVerified: true
+              id: 2f7477ea-2519-497f-8311-8c166241c308
+              idp: C
+              language: de
+              lastUpdated: '2025-08-15T02:49:33.478613Z'
+              name:
+                first: Ulf
+                last: Tritthart
+              notificationOptIn: true
+              phone: null
+              sutroNotifications: true
+              termsOptIn: true
+              voiceEnabledSpaId: null
+            ownerId: 2f7477ea-2519-497f-8311-8c166241c308
+            pairedAt: '2023-08-03T10:55:22.763Z'
+            powerResetRequired: false
+            productIdOrSlug: smarttub-ble-global-16000
+            revision: H
+            selfTest:
+              current:
+                blower: -99.9
+                circulationPump: 0.0
+                heaterAndCirculationPump: -99.9
+                jets:
+                - current: 0.0
+                  pumpId: P1
+                  spaId: '100946961'
+                - current: 0.0
+                  pumpId: P2
+                  spaId: '100946961'
+                ozone: null
+                ultraviolet: null
+              frequency: DAILY
+              lastTestTime: '2025-10-25T12:04:00Z'
+              startTime: null
+              status: FAIL
+            series: Reflections
+            signal: null
+            smEnable: false
+            stereo: false
+            subscriptionExpiredAt: '2026-08-04T10:55:22.763Z'
+            subscriptions:
+            - end: '2026-08-04T10:55:22.763Z'
+              start: '2025-08-03T10:55:22.763Z'
+              type: 1_YR_CELLULAR
+            sutro: null
+            tubColor: 21
+            us3G: false
+            voltage: 220
+            volume: 420
+            warrantyDate: '2023-08-03'
+            water:
+              oxidationReductionPotential: null
+              ph: null
+              temperature: 29.5
+              temperatureLastUpdated: '2025-10-25T10:26:26.035Z'
+              turbidity: null
+        speed: ONE_SPEED
+        state: {}
+        type: {}
+    spa_id: '100946961'

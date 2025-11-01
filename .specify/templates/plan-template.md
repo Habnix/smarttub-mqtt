@@ -31,7 +31,10 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- ✅ Document the test strategy per user story, including how failing tests will be written first (Principle I).
+- ✅ Describe how MQTT failures, retries, and safe-state fallbacks are handled (Principle II).
+- ✅ Identify required documentation updates (README, quickstart, CLI help) for the planned work (Principle III).
+- ✅ Capture UX expectations so common workflows stay simple and discoverable (Principle IV).
 
 ## Project Structure
 

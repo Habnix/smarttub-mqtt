@@ -1,0 +1,28 @@
+# SmartTub-MQTT Deploy Files
+# Ignore runtime data but keep configuration templates
+
+# Environment files (secrets)
+.env
+.env.local
+
+# Runtime data
+smarttub-mqtt/config/*.yaml
+!smarttub-mqtt/config/.gitkeep
+smarttub-mqtt/log/*.log
+smarttub-mqtt/log/*.zip
+
+# Mosquitto runtime data
+mosquitto/data/
+mosquitto/log/*.log
+
+# OpenHAB runtime data
+openhab/conf/
+openhab/userdata/
+openhab/addons/
+
+# Backups
+backups/
+
+# Docker Compose override
+docker-compose.override.yml
+docker-compose.yml

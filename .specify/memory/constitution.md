@@ -1,50 +1,65 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+- Version change: (not set) → 1.0.0
+- Modified principles: N/A (initial publication)
+- Added sections: Core Principles, Engineering Guardrails, Workflow & Quality Gates, Governance
+- Removed sections: None
+- Templates requiring updates: ✅ .specify/templates/plan-template.md, ✅ .specify/templates/spec-template.md, ✅ .specify/templates/tasks-template.md
+- Follow-up TODOs: None
+-->
+
+# SmartTub MQTT Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Test-First Reliability
+All production code MUST be preceded by automated tests that fail before implementation and pass after.
+Continuous integration MAY NOT accept code when required tests fail or are missing. Test suites MUST cover
+unit, integration, and MQTT contract scenarios relevant to a change. Rationale: The whirlpool controller must
+operate unattended; preventing regressions is non-negotiable.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Fail-Tolerant Control Paths
+Control flows interacting with the tub MUST handle MQTT disconnects, sensor anomalies, and command retries
+without crashing. Error paths MUST surface actionable diagnostics and default to safe tub states (e.g., stop
+heating/pumps on ambiguity). Rationale: The environment is physical; resilience prevents equipment damage and
+protects users.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Documented Transparency
+Every feature MUST ship with user-facing documentation (README updates, usage guides, or CLI help) and inline
+developer notes where behavior is non-obvious. Docs MUST explain configuration, safety defaults, and how to run
+tests locally and in CI. Rationale: The project targets public GitHub and Docker users who rely on clear docs to
+operate safely.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Intuitive Operation
+Interfaces (CLI, configuration files, dashboards) MUST favor simple defaults, self-describing commands, and
+guardrails that prevent misconfiguration. UX validation MUST confirm common workflows (start/stop heat, set
+temperature) remain discoverable and scriptable. Rationale: Ease of use drives adoption and reduces operational
+mistakes.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+## Engineering Guardrails
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+- Language: Python 3.11+ with typed modules; prefer standard library and well-supported MQTT clients (paho-mqtt).
+- Testing Stack: pytest with coverage reporting ≥80% on touched files; include integration tests against a
+	simulated MQTT broker.
+- Deployment: Deliver container images with sane defaults; document environment variables; avoid bundling secrets.
+- Security Posture: Local-first assumptions are acceptable, yet credentials stored in configs MUST support
+	rotation and be excluded from version control via `.env` or secrets managers.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+## Workflow & Quality Gates
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
-
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+1. Plan → Spec → Tasks sequence MUST reference this constitution and record how each principle is satisfied.
+2. Code reviews MUST verify: tests exist and pass, failure handling is explicit, documentation changes accompany
+	 behavior changes, and UX remains intuitive.
+3. Releases MUST include a changelog entry summarizing tests executed and known limitations.
+4. CI pipelines MUST run linting, type checks, unit, and integration suites; failures block merges.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- Authority: This constitution supersedes prior informal practices for repository governance.
+- Amendments: Proposals MUST document rationale, updated principles, and template impacts. Adoption requires
+	maintainer approval and version bump per semantic rules (major = breaking governance, minor = new principle or
+	major expansion, patch = clarifications).
+- Compliance Reviews: Quarterly (or before major release) audits MUST confirm adherence to principles, test
+	coverage, and documentation freshness. Non-compliance triggers remediation tasks tracked publicly.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2025-10-23 | **Last Amended**: 2025-10-23

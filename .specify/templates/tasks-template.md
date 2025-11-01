@@ -8,9 +8,12 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: Automated tests are REQUIRED per Principle I. Each user story must include tasks to create failing tests first (unit, integration, and MQTT contract where applicable).
 
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story. Ensure every story includes:
+- Test authoring tasks (fail first → pass later)
+- Failure-handling tasks that exercise MQTT retries and safe states
+- Documentation tasks covering updates to README/quickstart/CLI help
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -50,7 +53,8 @@ description: "Task list template for feature implementation"
 
 - [ ] T001 Create project structure per implementation plan
 - [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
+- [ ] T003 [P] Configure linting, formatting, type checking, and pytest with coverage reporting
+- [ ] T004 [P] Document local development setup in README
 
 ---
 
@@ -62,12 +66,11 @@ description: "Task list template for feature implementation"
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
-- [ ] T007 Create base models/entities that all stories depend on
-- [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T005 Setup MQTT client wrapper with reconnect + backoff strategy
+- [ ] T006 [P] Implement configuration management with safe defaults
+- [ ] T007 Create error handling and logging infrastructure that surfaces actionable diagnostics
+- [ ] T008 Establish simulated MQTT broker for integration tests
+- [ ] T009 Document baseline runbook (startup, shutdown, troubleshooting)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -79,21 +82,22 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 1 (MANDATORY) ⚠️
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
 - [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T012 [P] [US1] Unit tests covering failure paths and safe-state behavior
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T016 [US1] Add validation and error handling
-- [ ] T017 [US1] Add logging for user story 1 operations
+- [ ] T013 [P] [US1] Create [Entity1] model in src/models/[entity1].py
+- [ ] T014 [P] [US1] Create [Entity2] model in src/models/[entity2].py
+- [ ] T015 [US1] Implement [Service] in src/services/[service].py (depends on T013, T014)
+- [ ] T016 [US1] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T017 [US1] Add validation, retries, and safe-state handling
+- [ ] T018 [US1] Update documentation (README/quickstart/CLI help)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -105,17 +109,19 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 2 (MANDATORY) ⚠️
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T019 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T020 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T021 [P] [US2] Unit tests covering failure paths and safe-state behavior
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
-- [ ] T021 [US2] Implement [Service] in src/services/[service].py
-- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T023 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T022 [P] [US2] Create [Entity] model in src/models/[entity].py
+- [ ] T023 [US2] Implement [Service] in src/services/[service].py
+- [ ] T024 [US2] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T025 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T026 [US2] Update documentation (README/quickstart/CLI help)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -127,16 +133,18 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 3 (MANDATORY) ⚠️
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T027 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T028 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T029 [P] [US3] Unit tests covering failure paths and safe-state behavior
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
-- [ ] T027 [US3] Implement [Service] in src/services/[service].py
-- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T030 [P] [US3] Create [Entity] model in src/models/[entity].py
+- [ ] T031 [US3] Implement [Service] in src/services/[service].py
+- [ ] T032 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T033 [US3] Update documentation (README/quickstart/CLI help)
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -150,7 +158,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] TXXX [P] Documentation updates in docs/
+- [ ] TXXX [P] Documentation updates in docs/ and README
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
@@ -189,7 +197,7 @@ Examples of foundational tasks (adjust based on your project):
 - All Setup tasks marked [P] can run in parallel
 - All Foundational tasks marked [P] can run in parallel (within Phase 2)
 - Once Foundational phase completes, all user stories can start in parallel (if team capacity allows)
-- All tests for a user story marked [P] can run in parallel
+- All tests for a user story marked [P] can run in parallel, but MUST be authored before implementation
 - Models within a story marked [P] can run in parallel
 - Different user stories can be worked on in parallel by different team members
 

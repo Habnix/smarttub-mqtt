@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  # ============================================================================
+  # Build and Push Docker Image
+  # ============================================================================
+  docker-release:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+      
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
+
+  # ============================================================================
+  # Create GitHub Release
+  # ============================================================================
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: docker-release
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: SmartTub-MQTT ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## SmartTub-MQTT v${{ steps.version.outputs.VERSION }}
+            
+            ### Docker Image
+            
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+            ```
+            
+            ### Quick Start
+            
+            ```bash
+            # Pull latest
+            docker pull ghcr.io/${{ github.repository }}:latest
+            
+            # Run with docker-compose
+            cd deploy/
+            docker-compose up -d
+            ```
+            
+            ### Documentation
+            
+            - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+            - [Configuration Guide](https://github.com/${{ github.repository }}/blob/main/docs/configuration.md)
+            - [Deployment Guide](https://github.com/${{ github.repository }}/blob/main/deploy/README.md)
+            
+            ### Changelog
+            
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
