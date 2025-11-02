@@ -442,9 +442,8 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
         config.smarttub.token = _optional_non_empty(env.get("SMARTTUB_TOKEN"))
     if "SMARTTUB_DEVICE_ID" in env:
         value = env["SMARTTUB_DEVICE_ID"].strip()
-        if not value:
-            raise ConfigError("SMARTTUB_DEVICE_ID cannot be empty")
-        config.smarttub.device_id = value
+        if value:  # Only set if non-empty (auto-detected otherwise)
+            config.smarttub.device_id = value
     if "SMARTTUB_POLLING_INTERVAL_SECONDS" in env:
         config.smarttub.polling_interval_seconds = _coerce_int(
             env.get("SMARTTUB_POLLING_INTERVAL_SECONDS"),

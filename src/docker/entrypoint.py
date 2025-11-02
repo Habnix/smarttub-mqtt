@@ -121,6 +121,28 @@ def validate_directories(env: dict[str, str]) -> None:
         logger.info(f"  ✓ Config file found: {config_path}")
     else:
         logger.info(f"  ℹ Config file will be created: {config_path}")
+        # Create minimal config file with dummy values (will be overridden by .env)
+        try:
+            minimal_config = """# Auto-generated minimal config (values overridden by .env)
+smarttub:
+  email: "will-be-overridden@example.com"
+  password: "will-be-overridden"
+
+mqtt:
+  broker_url: "localhost:1883"
+
+web:
+  host: "0.0.0.0"
+  port: 8080
+
+logging:
+  level: "info"
+"""
+            config_path.write_text(minimal_config, encoding="utf-8")
+            logger.info(f"  ✓ Created minimal config file: {config_path}")
+        except Exception as e:
+            logger.warning(f"  ⚠ Could not create config file: {e} (will try to continue)")
+
 
 
 def setup_signal_handlers() -> None:

@@ -16,8 +16,11 @@ mkdir -p mosquitto/data
 mkdir -p mosquitto/log
 
 # Set correct permissions for container access
+# The container runs as user 'smarttub' (UID 1000), so directories need write access
+echo "🔒 Setting permissions (chmod 777) for container user..."
 chmod 777 config logs
 chmod -R 777 mosquitto 2>/dev/null || true
+echo "  ✓ Permissions set for config/ and logs/"
 
 # Create .env file if it doesn't exist
 if [ ! -f config/.env ]; then
@@ -30,8 +33,15 @@ if [ ! -f config/.env ]; then
 SMARTTUB_EMAIL='your@email.com'
 SMARTTUB_PASSWORD='your_password'
 
+# Optional: Device ID und Token - wird automatisch erkannt wenn nicht gesetzt
+# WICHTIG: Wenn nicht benötigt, auskommentieren statt leer lassen!
+# SMARTTUB_DEVICE_ID=your-device-id
+# SMARTTUB_TOKEN=your-token
+
 # MQTT Broker Configuration
-MQTT_BROKER_URL=192.168.178.164:1883
+# WICHTIG: Ersetzen Sie 'mqtt-broker-ip' mit Ihrer MQTT Broker IP-Adresse!
+# Beispiel: MQTT_BROKER_URL=192.168.1.100:1883
+MQTT_BROKER_URL=mqtt-broker-ip:1883
 MQTT_USERNAME=
 MQTT_PASSWORD=
 MQTT_BASE_TOPIC=smarttub-mqtt
