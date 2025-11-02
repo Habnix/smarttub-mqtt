@@ -45,7 +45,7 @@ def validate_environment() -> dict[str, str]:
     
     required_vars = {
         "SMARTTUB_EMAIL": os.getenv("SMARTTUB_EMAIL"),
-        "MQTT_BROKER": os.getenv("MQTT_BROKER"),
+        "MQTT_BROKER_URL": os.getenv("MQTT_BROKER_URL"),
     }
     
     # Check for password OR token
@@ -66,11 +66,11 @@ def validate_environment() -> dict[str, str]:
     
     # Validate paths
     config_path = os.getenv("CONFIG_PATH", "/config/smarttub.yaml")
-    log_dir = os.getenv("LOG_DIR", "/log")
+    log_dir = os.getenv("LOG_DIR", "/logs")  # Changed from /log to /logs to match docker-compose.yml
     
     logger.info(f"  ✓ SMARTTUB_EMAIL: {required_vars['SMARTTUB_EMAIL']}")
     logger.info(f"  ✓ SMARTTUB_PASSWORD/TOKEN: {'***' if password or token else 'NOT SET'}")
-    logger.info(f"  ✓ MQTT_BROKER: {required_vars['MQTT_BROKER']}")
+    logger.info(f"  ✓ MQTT_BROKER_URL: {required_vars['MQTT_BROKER_URL']}")
     logger.info(f"  ✓ CONFIG_PATH: {config_path}")
     logger.info(f"  ✓ LOG_DIR: {log_dir}")
     

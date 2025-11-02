@@ -1,12 +1,55 @@
-version: '3.8'
 services:
   smarttub-mqtt:
+    # Use local build instead of Docker Hub image
     build: .
+    # image: willnix/smarttub-mqtt:latest
     container_name: smarttub-mqtt
-    restart: unless-stopped
+    # Temporarily disabled to avoid rate limiting during testing
+    # restart: unless-stopped
+    
+    # Mount config directory containing .env
     volumes:
       - ./config:/config
+      - ./logs:/logs
+    
+    # Expose Web UI port
     ports:
       - "8080:8080"
+    
+    # Load environment from .env file in config directory
+    env_file:
+      - ./config/.env
+    
     environment:
       - PYTHONUNBUFFERED=1
+    
+    # Network configuration
+    network_mode: bridge
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Optional: Uncomment to add local MQTT broker
+#  mosquitto:
+#    image: eclipse-mosquitto:latest
+#    container_name: mosquitto
+#    restart: unless-stopped
+#    ports:
+#      - "1883:1883"
+#      - "9001:9001"
+#    volumes:
+#      - ./mosquitto/config:/mosquitto/config
+#      - ./mosquitto/data:/mosquitto/data
+#      - ./mosquitto/log:/mosquitto/log

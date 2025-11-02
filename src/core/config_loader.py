@@ -490,9 +490,8 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
         config.mqtt.password = _optional_string(env.get("MQTT_PASSWORD"))
     if "MQTT_CLIENT_ID" in env:
         value = env["MQTT_CLIENT_ID"].strip()
-        if not value:
-            raise ConfigError("MQTT_CLIENT_ID cannot be empty")
-        config.mqtt.client_id = value
+        if value:  # Only set if non-empty
+            config.mqtt.client_id = value
     if "MQTT_BASE_TOPIC" in env:
         value = env["MQTT_BASE_TOPIC"].strip()
         if not value:
