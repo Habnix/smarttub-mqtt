@@ -48,8 +48,13 @@ class WebApp:
                 )
                 self.app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 
-        # Mount static files
-        self.app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
+        # Mount static files (only if directory exists and has content)
+        import os
+        static_dir = "src/web/static"
+        if os.path.exists(static_dir) and os.path.isdir(static_dir):
+            # Check if directory has any files
+            if any(os.scandir(static_dir)):
+                self.app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
         # Setup templates
         self.templates = Jinja2Templates(directory="src/web/templates")
