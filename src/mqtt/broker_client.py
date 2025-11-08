@@ -519,6 +519,16 @@ class MQTTBrokerClient:
             },
         )
         
+        # Resubscribe to all topics after (re)connect
+        if self._topic_callbacks:
+            self._logger.info(f"Resubscribing to {len(self._topic_callbacks)} MQTT topics after connect")
+            for topic in self._topic_callbacks.keys():
+                try:
+                    client.subscribe(topic, qos=1)
+                    self._logger.debug(f"Resubscribed to: {topic}")
+                except Exception as e:
+                    self._logger.error(f"Failed to resubscribe to {topic}: {e}")
+        
         # Publish meta/mqtt topic (T055)
         try:
             self.publish_meta_mqtt()

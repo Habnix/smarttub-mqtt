@@ -1,7 +1,7 @@
 ````markdown
 # smarttub-mqtt
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
+[![Version](https://img.shields.io/badge/version-0.2.2-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Habnix/smarttub-mqtt/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com/r/willnix/smarttub-mqtt)
