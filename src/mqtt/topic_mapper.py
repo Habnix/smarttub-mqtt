@@ -7,7 +7,7 @@ from typing import Any, List
 from src.core.config_loader import AppConfig
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("smarttub.mqtt.mapper")
 
 
 class MQTTMessage:

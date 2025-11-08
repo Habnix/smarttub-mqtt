@@ -156,17 +156,18 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
         log_level=min_level,
     )
 
-    # Configure structlog
+    # Configure structlog to use standard logging
     structlog.configure(
         wrapper_class=structlog.make_filtering_bound_logger(min_level),
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
         processors=[
+            structlog.stdlib.filter_by_level,
             structlog.processors.add_log_level,
             timestamper,
             forwarder,
-            structlog.processors.JSONRenderer(),
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
     )
 
@@ -178,28 +179,66 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     
-    # Add console handler
+    # Add console handler to root (all logs to console)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(min_level)
-    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    console_formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.processors.JSONRenderer(),
+    )
+    console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
     
-    # Add file handlers for all log types
-    for handler in file_handlers.values():
-        root_logger.addHandler(handler)
+    # Add default smarttub.log to root for catchall
+    root_logger.addHandler(file_handlers["smarttub"])
     
-    # Set up logger routing for specific modules
-    # MQTT logs go to mqtt.log
+    # Set up logger routing for specific modules with propagate=False to avoid duplicates
+    # MQTT logs go ONLY to mqtt.log
     mqtt_logger = logging.getLogger("smarttub.mqtt")
+    mqtt_logger.setLevel(min_level)
+    mqtt_logger.propagate = False  # Don't propagate to root/parent
     mqtt_logger.addHandler(file_handlers["mqtt"])
+    mqtt_logger.addHandler(console_handler)
     
-    # WebUI logs go to webui.log  
+    # WebUI logs go ONLY to webui.log  
     webui_logger = logging.getLogger("smarttub.webui")
+    webui_logger.setLevel(min_level)
+    webui_logger.propagate = False
     webui_logger.addHandler(file_handlers["webui"])
+    webui_logger.addHandler(console_handler)
     
-    # SmartTub API logs go to smarttub.log
-    smarttub_logger = logging.getLogger("smarttub.api")
-    smarttub_logger.addHandler(file_handlers["smarttub"])
+    # SmartTub API logs go ONLY to smarttub.log
+    api_logger = logging.getLogger("smarttub.api")
+    api_logger.setLevel(min_level)
+    api_logger.propagate = False
+    api_logger.addHandler(file_handlers["smarttub"])
+    api_logger.addHandler(console_handler)
+    
+    # Core logs go ONLY to smarttub.log
+    core_logger = logging.getLogger("smarttub.core")
+    core_logger.setLevel(min_level)
+    core_logger.propagate = False
+    core_logger.addHandler(file_handlers["smarttub"])
+    core_logger.addHandler(console_handler)
+    
+    # Uvicorn loggers go ONLY to webui.log
+    # Uvicorn uses its own loggers: uvicorn, uvicorn.access, uvicorn.error
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_logger.setLevel(min_level)
+    uvicorn_logger.propagate = False
+    uvicorn_logger.addHandler(file_handlers["webui"])
+    uvicorn_logger.addHandler(console_handler)
+    
+    uvicorn_access_logger = logging.getLogger("uvicorn.access")
+    uvicorn_access_logger.setLevel(min_level)
+    uvicorn_access_logger.propagate = False
+    uvicorn_access_logger.addHandler(file_handlers["webui"])
+    uvicorn_access_logger.addHandler(console_handler)
+    
+    uvicorn_error_logger = logging.getLogger("uvicorn.error")
+    uvicorn_error_logger.setLevel(min_level)
+    uvicorn_error_logger.propagate = False
+    uvicorn_error_logger.addHandler(file_handlers["webui"])
+    uvicorn_error_logger.addHandler(console_handler)
 
 
 __all__ = ["configure_log_bridge", "CommandAuditLogger"]

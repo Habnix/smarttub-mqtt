@@ -36,7 +36,7 @@ except ImportError:
     create_app = None  # type: ignore
 
 
-logger = structlog.get_logger(__name__)
+logger = structlog.get_logger("smarttub.core")
 
 _DEFAULT_SIGNALS: tuple[signal.Signals, ...] = tuple(
     getattr(signal, name)
@@ -207,6 +207,7 @@ async def _async_main(
     capability_refresh_task: asyncio.Task | None = None
     command_queue_task: asyncio.Task | None = None
     web_server_task: asyncio.Task | None = None
+    discovery_task: asyncio.Task | None = None
     event = shutdown_event or asyncio.Event()
 
     try:
@@ -223,13 +224,7 @@ async def _async_main(
         # Publish initial status
         broker.publish(f"{config.mqtt.base_topic}/status", "starting", retain=True)
 
-        # Discovery gating: check CHECK_SMARTTUB flag (skip when running CLI discovery/show modes)
-        if not discover and not show_discovery and not getattr(config, "check_smarttub", True):
-            broker.publish(f"{config.mqtt.base_topic}/status", "check_smarttub_disabled", retain=True)
-            logger.info("CHECK_SMARTTUB is disabled; discovery and API will not run.")
-            return 0
-
-        # Initialize SmartTub integration
+        # Initialize SmartTub integration (needed for WebUI and commands even if CHECK_SMARTTUB=false)
         smarttub_client = SmartTubClient(config)
         topic_mapper = MQTTTopicMapper(config, broker)
         state_manager = StateManager(smarttub_client, topic_mapper)
@@ -239,24 +234,34 @@ async def _async_main(
         # Initialize SmartTub client before using it
         await smarttub_client.initialize()
 
-        # Run initial discovery if CHECK_SMARTTUB is enabled (but not in CLI discovery mode)
-        if getattr(config, "check_smarttub", True) and not discover and not show_discovery:
-            logger.info("Running initial discovery (CHECK_SMARTTUB=true)")
-            try:
-                from src.core.item_prober import ItemProber
-                item_prober = ItemProber(config, smarttub_client, topic_mapper, error_tracker=error_tracker)
-                await item_prober.probe_all()
-                logger.info("Initial discovery completed successfully")
-            except Exception as e:
-                logger.error(f"Initial discovery failed: {e}")
-                # Track startup discovery error (T058)
-                error_tracker.track_error(
-                    category=ErrorCategory.DISCOVERY,
-                    message=f"Initial discovery failed: {str(e)}",
-                    severity=ErrorSeverity.WARNING,
-                    error_code="STARTUP_DISCOVERY_FAILED"
-                )
-                # Continue anyway - don't fail the startup
+        # Discovery gating: check CHECK_SMARTTUB flag (skip when running CLI discovery/show modes)
+        if not discover and not show_discovery and not getattr(config, "check_smarttub", True):
+            broker.publish(f"{config.mqtt.base_topic}/status", "check_smarttub_disabled", retain=True)
+            logger.info("CHECK_SMARTTUB is disabled; discovery and API polling will not run.")
+        else:
+            # Run initial discovery if CHECK_SMARTTUB is enabled (but not in CLI discovery mode)
+            # Run as background task to not block WebUI startup (especially during light mode tests)
+            if getattr(config, "check_smarttub", True) and not discover and not show_discovery:
+                logger.info("Starting initial discovery in background (CHECK_SMARTTUB=true)")
+                
+                async def run_discovery():
+                    try:
+                        from src.core.item_prober import ItemProber
+                        item_prober = ItemProber(config, smarttub_client, topic_mapper, error_tracker=error_tracker)
+                        await item_prober.probe_all()
+                        logger.info("Initial discovery completed successfully")
+                    except Exception as e:
+                        logger.error(f"Initial discovery failed: {e}")
+                        # Track startup discovery error (T058)
+                        error_tracker.track_error(
+                            category=ErrorCategory.DISCOVERY,
+                            message=f"Initial discovery failed: {str(e)}",
+                            severity=ErrorSeverity.WARNING,
+                            error_code="STARTUP_DISCOVERY_FAILED"
+                        )
+                
+                # Create background task without awaiting it
+                discovery_task = loop.create_task(run_discovery())
 
         # Handle discovery-only mode
         if discover:
@@ -313,16 +318,34 @@ async def _async_main(
                 app = create_app(config, state_manager, smarttub_client, capability_detector, error_tracker)
                 
                 # Start uvicorn server in background
+                # Configure uvicorn to use our loggers (T066)
                 uvicorn_config = uvicorn.Config(
                     app,
                     host=config.web.host,
                     port=config.web.port,
                     log_level="info",
-                    access_log=True
+                    access_log=True,
+                    log_config=None  # Disable uvicorn's default logging config
                 )
                 server = uvicorn.Server(uvicorn_config)
                 
                 async def run_server():
+                    # Configure uvicorn loggers to use our handlers (reuse existing handlers)
+                    import logging
+                    
+                    # Get existing webui logger's handlers
+                    webui_logger = logging.getLogger("smarttub.webui")
+                    
+                    # Configure uvicorn loggers to use same handlers as smarttub.webui
+                    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
+                        uv_logger = logging.getLogger(logger_name)
+                        uv_logger.setLevel(logging.INFO)
+                        uv_logger.propagate = False
+                        uv_logger.handlers.clear()
+                        # Copy all handlers from webui_logger
+                        for handler in webui_logger.handlers:
+                            uv_logger.addHandler(handler)
+                    
                     await server.serve()
                 
                 web_server_task = loop.create_task(run_server())
@@ -401,6 +424,12 @@ async def _async_main(
         raise
     finally:
         event.set()
+        
+        # Cancel discovery task if running
+        if discovery_task is not None:
+            discovery_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await discovery_task
         
         # Cancel web server
         if web_server_task is not None:

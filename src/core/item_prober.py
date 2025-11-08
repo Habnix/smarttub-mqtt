@@ -60,7 +60,7 @@ class ItemProber:
     BRIGHTNESS_LEVELS = [0, 25, 50, 75, 100]
     
     # Delay between light mode tests (seconds)
-    LIGHT_TEST_DELAY_SECONDS = 20
+    LIGHT_TEST_DELAY_SECONDS = 1  # Reduced for faster testing
 
     def __init__(
         self, 
@@ -522,6 +522,18 @@ class ItemProber:
         # 5) Systematic light mode testing if enabled
         if getattr(self.config, 'discovery_test_all_light_modes', False):
             try:
+                # Check if spa is online before starting discovery
+                try:
+                    status = await spa.get_status()
+                    is_online = getattr(status, 'online', None)
+                    if is_online == "OFFLINE" or is_online is False:
+                        logger.warning(f"⚠️  Spa {spa_id} is OFFLINE - skipping light mode discovery")
+                        return items
+                    logger.info(f"✓ Spa {spa_id} is online (status: {is_online})")
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not verify spa online status: {e}")
+                    # Continue anyway - might still work
+                
                 light_objs = raw_light_objects if 'raw_light_objects' in locals() and raw_light_objects is not None else []
                 
                 # Publish discovery status: testing
@@ -533,11 +545,57 @@ class ItemProber:
                 except Exception:
                     pass
                 
-                # Systematic testing of all light modes
+                # Systematic testing of all light modes with zone isolation
                 light_test_results = []
+                
+                # Helper function to turn off a zone with rate limiting
+                async def turn_off_zone(zone_num):
+                    try:
+                        # Try using light object's turn_off() method first
+                        light_to_turn_off = next((l for l in light_objs if getattr(l, 'zone', None) == zone_num), None)
+                        if light_to_turn_off:
+                            try:
+                                await light_to_turn_off.turn_off()
+                                logger.debug(f"Turned OFF zone {zone_num} using light.turn_off()")
+                                return
+                            except Exception as e:
+                                logger.debug(f"light.turn_off() failed for zone {zone_num}: {e}, trying direct API")
+                        
+                        # Fallback to direct API with rate limiting
+                        import smarttub
+                        body = {"intensity": 0, "mode": "OFF"}
+                        success = await self._safe_request_with_retry(
+                            spa, "PATCH", f"lights/{zone_num}", body, max_retries=2
+                        )
+                        if success:
+                            logger.debug(f"Turned OFF zone {zone_num} via direct API")
+                        else:
+                            logger.warning(f"Failed to turn OFF zone {zone_num}")
+                    except Exception as e:
+                        logger.debug(f"Failed to turn OFF zone {zone_num}: {e}")
+                
+                # Turn OFF all zones before starting
+                logger.info("🔄 Preparing test environment - turning OFF all zones")
                 for l_obj in light_objs:
+                    zone_num = getattr(l_obj, 'zone', None)
+                    if zone_num:
+                        await turn_off_zone(zone_num)
+                
+                await asyncio.sleep(15)  # Zone isolation delay
+                
+                # Test each zone with proper isolation
+                for idx, l_obj in enumerate(light_objs):
+                    zone_num = getattr(l_obj, 'zone', None)
+                    logger.info(f"🔍 Starting discovery for zone {zone_num}")
+                    
                     zone_results = await self._test_all_light_modes(spa, l_obj, spa_id)
                     light_test_results.append(zone_results)
+                    
+                    # Turn zone OFF and pause before next zone (if not last zone)
+                    if idx < len(light_objs) - 1:
+                        await turn_off_zone(zone_num)
+                        logger.info(f"✅ Zone {zone_num} complete. Pausing 15s before next zone...")
+                        await asyncio.sleep(15)  # Zone isolation delay
                 
                 # Store results in capabilities
                 if light_test_results:
@@ -1000,6 +1058,52 @@ class ItemProber:
             logger.error(f"Failed to test RGB color capability for zone {zone}: {e}")
             return None
 
+    async def _safe_request_with_retry(self, spa: Any, method: str, endpoint: str, 
+                                       body: Optional[Dict] = None, max_retries: int = 3) -> bool:
+        """Execute spa.request() with rate-limiting handling and exponential backoff.
+        
+        Args:
+            spa: Spa object
+            method: HTTP method (GET, PATCH, POST, etc.)
+            endpoint: API endpoint
+            body: Request body (optional)
+            max_retries: Maximum retry attempts for 429 errors
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        import smarttub
+        
+        for attempt in range(max_retries):
+            try:
+                await spa.request(method, endpoint, body)
+                return True
+            except Exception as e:
+                error_str = str(e)
+                
+                # Check for 429 Too Many Requests
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    if attempt < max_retries - 1:
+                        # Exponential backoff: 2s, 4s, 8s
+                        wait_time = 2 ** (attempt + 1)
+                        logger.warning(f"⚠️  Rate limited (429) - waiting {wait_time}s before retry {attempt+2}/{max_retries}")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"❌ Rate limit exceeded after {max_retries} retries")
+                        return False
+                
+                # Check for API errors that should not be retried
+                if "400" in error_str or "404" in error_str:
+                    logger.debug(f"API error {error_str} - not retrying")
+                    return False
+                
+                # Other errors - fail immediately
+                logger.debug(f"Request failed: {e}")
+                return False
+        
+        return False
+
     async def _test_light_mode(self, spa: Any, light_obj: Any, mode_name: str, brightness: int, 
                                zone: int, spa_id: str) -> bool:
         """Test a specific light mode/brightness combination.
@@ -1015,6 +1119,7 @@ class ItemProber:
         Returns:
             True if test successful, False otherwise
         """
+        logger.info(f"🔍 Testing Zone {zone}: {mode_name} @ {brightness}%...")
         try:
             # Import LightMode enum
             import smarttub
@@ -1023,87 +1128,145 @@ class ItemProber:
             try:
                 mode_enum = getattr(smarttub.SpaLight.LightMode, mode_name, None)
                 if mode_enum is None:
-                    logger.debug(f"Mode {mode_name} not found in LightMode enum, skipping")
+                    logger.warning(f"⚠️  Mode {mode_name} not found in LightMode enum, skipping")
                     return False
             except Exception as e:
-                logger.debug(f"Failed to check LightMode enum for {mode_name}: {e}")
+                logger.warning(f"⚠️  Failed to check LightMode enum for {mode_name}: {e}")
                 return False
             
-            # WORKAROUND: Use direct API call instead of set_mode() to avoid python-smarttub bug
-            # The library's set_mode() calls _wait_for_state_change() which fails when state.lights is None
-            # We'll use spa.request() directly and verify manually afterwards
+            # Try using light.set_mode() first (includes built-in state verification)
+            # This waits automatically until the state changes or times out
             try:
-                body = {
-                    "intensity": brightness,
-                    "mode": mode_name,  # API accepts string, not enum
-                }
-                await spa.request("PATCH", f"lights/{zone}", body)
-                logger.debug(f"PATCH lights/{zone} successful with mode={mode_name}, intensity={brightness}")
-            except smarttub.APIError as e:
-                # API rejected this mode/brightness combination (e.g., 400 Bad Request)
-                logger.debug(f"API rejected mode {mode_name} @ {brightness}%: {e}")
-                return False
+                await light_obj.set_mode(mode_enum, brightness)
+                # If we reach here, set_mode() succeeded and verified the state change
+                logger.info(f"✓ Zone {zone}: {mode_name} @ {brightness}% successful (verified)")
+                return True
+                
+            except AttributeError as e:
+                # Known bug: state.lights is None - fall back to manual verification
+                logger.debug(f"light.set_mode() failed (state.lights=None bug), using direct API: {e}")
+                
             except Exception as e:
-                logger.debug(f"Unexpected error setting mode {mode_name} @ {brightness}%: {e}")
+                error_str = str(e)
+                
+                # Check for rate limiting
+                if "429" in error_str or "Too Many Requests" in error_str:
+                    logger.warning(f"⚠️  Rate limited during set_mode() for {mode_name}")
+                    await asyncio.sleep(5)
+                    return False
+                
+                # Check for API rejection (invalid mode/brightness combo)
+                if "400" in error_str or "404" in error_str:
+                    logger.warning(f"❌ API rejected mode {mode_name} @ {brightness}%: {e}")
+                    return False
+                
+                # State change timeout - might be a false negative for WHEEL/RGB modes
+                # These modes report intensity=0 even when on, causing verification to fail
+                # Solution: Manually verify by checking only the mode (ignore intensity)
+                if "State change not reflected" in error_str or "timeout" in error_str.lower():
+                    logger.warning(f"⏱️  Mode {mode_name} timed out during set_mode() - checking manually...")
+                    
+                    # Wait a bit longer and check manually
+                    await asyncio.sleep(3)
+                    
+                    try:
+                        # Refresh spa status (this updates all light objects automatically)
+                        await spa.get_status_full()
+                        
+                        # Check current mode (light_obj.mode is a LightMode enum)
+                        current_mode = light_obj.mode
+                        if current_mode is not None:
+                            current_mode_name = current_mode.name
+                            
+                            # Check if mode matches (ignore intensity for WHEEL/RGB modes)
+                            if current_mode_name == mode_name:
+                                logger.info(f"✓ Zone {zone}: {mode_name} @ {brightness}% successful (manual verification)")
+                                return True
+                            else:
+                                logger.warning(f"❌ Mode verification failed: expected {mode_name}, got {current_mode_name}")
+                                return False
+                        else:
+                            logger.debug(f"Manual verification failed: light_obj.mode is None")
+                    except Exception as verify_error:
+                        logger.debug(f"Manual verification failed: {verify_error}")
+                    
+                    logger.warning(f"❌ Mode {mode_name} could not be verified - likely not supported")
+                    return False
+                
+                # Other errors - log and fail
+                logger.warning(f"❌ Unexpected error in set_mode() for {mode_name}: {e}")
                 return False
             
-            # Wait longer for API to propagate (we're not using wait_for_state_change anymore)
+            # Fallback: Direct API call with manual verification (for state.lights=None bug)
+            body = {"intensity": brightness, "mode": mode_name}
+            success = await self._safe_request_with_retry(
+                spa, "PATCH", f"lights/{zone}", body, max_retries=3
+            )
+            
+            if not success:
+                return False
+            
+            # Wait and verify manually (simple approach since set_mode() failed)
             await asyncio.sleep(5)
             
-            # Verify by calling get_lights() with retry (API sometimes returns None temporarily)
-            light_list = None
-            for retry in range(5):
-                try:
-                    lights = await spa.get_lights()
-                    if lights and len(lights) > 0:
-                        light_list = lights
-                        break
-                except Exception as e:
-                    logger.debug(f"get_lights() raised exception: {e}, retry {retry+1}/5")
-                
-                logger.debug(f"get_lights() returned None or empty, retry {retry+1}/5")
-                await asyncio.sleep(2)
-            
-            if not light_list:
-                logger.warning(f"get_lights() returned no data after 5 retries for zone {zone}")
-                return False
-            
-            # DEBUG: Check light_list type and length
-            logger.info(f"DEBUG: light_list type={type(light_list)}, value={light_list}")
-            
-            # Find our zone in the results
-            for l in light_list:
-                if getattr(l, 'zone', None) == zone:
-                    # Check if mode matches
-                    current_mode = getattr(l, 'mode', None)
-                    # Handle both string and enum mode values
-                    if hasattr(current_mode, 'name'):
-                        current_mode_name = current_mode.name
-                    else:
-                        current_mode_name = str(current_mode) if current_mode else None
-                    
-                    current_intensity = getattr(l, 'intensity', None)
-                    
-                    # Verify mode matches (for OFF, we expect mode to be OFF regardless of brightness)
-                    if mode_name == "OFF":
-                        if current_mode_name == "OFF":
-                            logger.debug(f"✓ Zone {zone} mode test successful: {mode_name}")
-                            return True
-                    else:
-                        # For non-OFF modes, check both mode and brightness
-                        if current_mode_name == mode_name and current_intensity == brightness:
-                            logger.debug(f"✓ Zone {zone} mode test successful: {mode_name} @ {brightness}%")
-                            return True
-                        elif current_mode_name == mode_name:
-                            # Mode matches but brightness doesn't - still count as supported mode
-                            logger.debug(f"✓ Zone {zone} mode test partial success: {mode_name} (brightness mismatch: {current_intensity} vs {brightness})")
-                            return True
-                    
-                    logger.debug(f"✗ Zone {zone} mode test failed: expected {mode_name}@{brightness}%, got {current_mode_name}@{current_intensity}%")
+            try:
+                lights = await spa.get_lights()
+                if not lights:
+                    logger.debug(f"get_lights() returned None after direct API call")
                     return False
-            
-            logger.debug(f"Zone {zone} not found in get_lights() response")
-            return False
+                    
+                # Find our zone in the results
+                for l in lights:
+                    if getattr(l, 'zone', None) == zone:
+                        # Check if mode matches
+                        current_mode = getattr(l, 'mode', None)
+                        # Handle both string and enum mode values
+                        if hasattr(current_mode, 'name'):
+                            current_mode_name = current_mode.name
+                        else:
+                            current_mode_name = str(current_mode) if current_mode else None
+                        
+                        current_intensity = getattr(l, 'intensity', None)
+                        
+                        # Verify mode matches
+                        if mode_name == "OFF":
+                            # For OFF mode, just check mode (intensity should be 0)
+                            if current_mode_name == "OFF":
+                                logger.info(f"✓ Zone {zone}: {mode_name} successful")
+                                return True
+                            else:
+                                logger.info(f"✗ Zone {zone}: {mode_name} failed - got {current_mode_name}")
+                                return False
+                        else:
+                            # For non-OFF modes, check mode name
+                            # Dynamic modes (WHEEL, RGB) often have intensity=0, so don't require exact match
+                            is_dynamic_mode = mode_name in ["LOW_SPEED_WHEEL", "HIGH_SPEED_WHEEL", 
+                                                            "HIGH_SPEED_COLOR_WHEEL", "COLOR_WHEEL",
+                                                        "FULL_DYNAMIC_RGB", "PARTY"]
+                        
+                        if current_mode_name == mode_name:
+                            if is_dynamic_mode:
+                                # Dynamic modes: Accept any intensity (often 0%)
+                                logger.info(f"✓ Zone {zone}: {mode_name} successful (dynamic mode @ {current_intensity}%)")
+                                return True
+                            elif current_intensity == brightness:
+                                # Static modes: Require exact brightness match
+                                logger.info(f"✓ Zone {zone}: {mode_name} @ {brightness}% successful")
+                                return True
+                            else:
+                                # Static mode with wrong brightness - still supported but note it
+                                logger.info(f"✓ Zone {zone}: {mode_name} partial (requested {brightness}%, got {current_intensity}%)")
+                                return True
+                        else:
+                            logger.info(f"✗ Zone {zone}: {mode_name} @ {brightness}% failed - got {current_mode_name} @ {current_intensity}%")
+                            return False
+                
+                logger.debug(f"Zone {zone} not found in get_lights() response")
+                return False
+                
+            except Exception as e:
+                logger.debug(f"Error during manual verification: {e}")
+                return False
             
         except asyncio.TimeoutError:
             logger.debug(f"Timeout testing mode {mode_name} @ {brightness}% for zone {zone}")

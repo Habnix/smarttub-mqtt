@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.config_loader import AppConfig
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("smarttub.api")
 
 
 class SmartTubClient:

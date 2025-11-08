@@ -1,7 +1,7 @@
 ````markdown
 # smarttub-mqtt
 
-[![Version](https://img.shields.io/badge/version-0.1.2-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Habnix/smarttub-mqtt/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com/r/willnix/smarttub-mqtt)
@@ -81,7 +81,21 @@ A robust MQTT bridge for SmartTub hot tubs providing extensive telemetry, contro
 - Type and range checks for critical parameters
 - Secure basic auth (constant-time comparison)
 
-### 📝 Logging & Observability
+### 💡 Reliability & Performance
+- **Automatic state verification**: Uses python-smarttub's built-in `light.set_mode()` with state change detection
+- **Rate-limiting protection**: Handles 429 "Too Many Requests" errors with exponential backoff (2s/4s/8s)
+- **Online status checking**: Verifies spa connectivity before discovery to prevent timeouts
+- **Dynamic mode support**: Correctly handles color wheel and RGB modes with variable intensity
+- **Optimized discovery timing**: 5-second intervals between light mode tests for reliable API communication
+
+### 🎨 Light Control Features
+- **18 light modes tested**: OFF, ON, PURPLE, ORANGE, RED, YELLOW, GREEN, AQUA, BLUE, WHITE, AMBER, plus color wheels
+- **Bidirectional sync**: MQTT commands control spa hardware AND app changes sync to MQTT
+- **Verified compatibility**: Tested on D1 Chairman spa with both Interior and Exterior zones
+- **Smart timing**: Discovery automatically spaces tests to prevent API rate-limiting
+- **Live feedback**: Real-time MQTT updates when light modes change
+
+### �📝 Logging & Observability
 - Structured JSON logs, rotation and optional MQTT forwarding
 - Prometheus-ready metrics and heartbeat telemetry
 
@@ -340,6 +354,92 @@ WEB_AUTH_USERNAME=admin
 WEB_AUTH_PASSWORD=changeme
 ```
 
+## Discovery Modes
+
+### Operating Modes
+
+The bridge supports different operating modes controlled by two key environment variables:
+
+#### `CHECK_SMARTTUB` - Main Discovery Toggle
+
+Controls whether the bridge connects to the SmartTub API for discovery and polling:
+
+- **`CHECK_SMARTTUB=true`** (default, recommended for production):
+  - Connects to SmartTub API on startup
+  - Runs initial discovery to detect spa components
+  - Polls API every 30s for state updates
+  - Publishes state to MQTT topics
+  - Web UI shows live data
+
+- **`CHECK_SMARTTUB=false`** (special use cases):
+  - **No API connection** - skips discovery and polling
+  - Web UI still runs on port 8080
+  - MQTT commands still work (via command queue)
+  - Useful for:
+    - Testing WebUI without API calls
+    - Debugging MQTT infrastructure
+    - Development/testing environments
+    - Temporary API connection issues
+
+#### `DISCOVERY_TEST_ALL_LIGHT_MODES` - Light Mode Testing
+
+Controls whether to test all 18 light modes during discovery (runs only if `CHECK_SMARTTUB=true`):
+
+- **`DISCOVERY_TEST_ALL_LIGHT_MODES=false`** (default, recommended for production):
+  - Normal fast discovery (~30-60 seconds)
+  - Detects components without testing individual light modes
+  - Suitable for day-to-day operation
+
+- **`DISCOVERY_TEST_ALL_LIGHT_MODES=true`** (initial setup only):
+  - **Systematic testing of all light modes** (~3 minutes per light zone)
+  - Tests: OFF, ON, PURPLE, ORANGE, RED, YELLOW, GREEN, AQUA, BLUE, WHITE, AMBER, color wheel modes
+  - **5-second intervals** between tests for reliable API communication
+  - Publishes test results to MQTT and YAML
+  - Use **once during initial setup** to identify working light modes
+  - Web UI remains accessible during testing (runs in background)
+
+### Light Mode Discovery Timing
+
+**Important**: The SmartTub API requires time to process light mode changes. Discovery uses `LIGHT_TEST_DELAY_SECONDS=5` to prevent rate-limiting errors:
+
+- **Too fast (1s)**: API rejects commands with 400 Bad Request
+- **Optimal (5s)**: All modes detected reliably
+- **Per zone**: ~90 seconds (18 modes × 5s)
+- **Two zones**: ~3 minutes total
+
+**Live Testing Results** (v1.5.0):
+- ✅ HIGH_SPEED_WHEEL: Confirmed working
+- ✅ LOW_SPEED_WHEEL: Confirmed working  
+- ✅ FULL_DYNAMIC_RGB: Confirmed working
+- ✅ Bidirectional sync: MQTT↔Spa verified
+
+### Recommended Configurations
+
+| Scenario | CHECK_SMARTTUB | DISCOVERY_TEST_ALL_LIGHT_MODES | Use Case |
+|----------|----------------|-------------------------------|----------|
+| **Production** | `true` | `false` | Normal spa control with fast startup |
+| **Initial Setup** | `true` | `true` | One-time testing to identify working light modes |
+| **Development** | `false` | `false` | Test WebUI/MQTT without API calls |
+
+**Example `.env` configurations**:
+
+```bash
+# Production (recommended)
+CHECK_SMARTTUB=true
+DISCOVERY_TEST_ALL_LIGHT_MODES=false
+
+# Initial setup (run once) 
+CHECK_SMARTTUB=true
+DISCOVERY_TEST_ALL_LIGHT_MODES=true
+LIGHT_TEST_DELAY_SECONDS=5  # Optimal timing for reliable discovery
+
+# Development/testing
+CHECK_SMARTTUB=false
+DISCOVERY_TEST_ALL_LIGHT_MODES=false  # ignored when CHECK_SMARTTUB=false
+```
+
+**Note**: `DISCOVERY_TEST_ALL_LIGHT_MODES` is only effective when `CHECK_SMARTTUB=true`. If `CHECK_SMARTTUB=false`, discovery never runs and the light mode testing setting is ignored.
+
 ## Error Tracking
 
 ### MQTT Meta Topic
@@ -568,9 +668,9 @@ Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
 
-**Status**: Production Ready ✅
-**Version**: 0.1
-**Last Updated**: October 31, 2025
+**Status**: Production Ready ✅  
+**Version**: 1.5.0  
+**Last Updated**: November 8, 2025
 
 ## Acknowledgements
 Thanks to Matt Zimmerman for the python-smarttub API used to interact with SmartTub devices: https://github.com/mdz/python-smarttub

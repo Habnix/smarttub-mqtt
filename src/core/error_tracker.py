@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 from threading import Lock
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("smarttub.core")
 
 
 class ErrorSeverity(Enum):

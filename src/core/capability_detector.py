@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from src.mqtt.topic_mapper import MQTTTopicMapper
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("smarttub.core")
 
 
 class SpaCapabilities:

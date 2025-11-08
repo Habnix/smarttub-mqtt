@@ -10,7 +10,9 @@ import threading
 from src.core.config_loader import AppConfig
 from src.core.smarttub_client import SmartTubClient
 
-logger = logging.getLogger(__name__)
+from src.mqtt.broker_client import MQTTBrokerClient
+
+logger = logging.getLogger("smarttub.mqtt.commands")
 
 
 class CommandManager:

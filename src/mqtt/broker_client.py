@@ -54,7 +54,7 @@ class MQTTBrokerClient:
         error_tracker: Any | None = None
     ) -> None:
         self._config = config
-        self._logger = logger or logging.getLogger(__name__)
+        self._logger = logger or logging.getLogger("smarttub.mqtt.broker")
         self._error_tracker = error_tracker
         self._client: Any | None = None
         self._loop_started = False

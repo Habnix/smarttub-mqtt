@@ -10,7 +10,7 @@ from src.core.config_loader import AppConfig
 from src.core.smarttub_client import SmartTubClient
 from src.mqtt.topic_mapper import MQTTTopicMapper
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("smarttub.core")
 
 
 class StateManager:
