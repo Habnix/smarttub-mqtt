@@ -179,8 +179,14 @@ def main() -> NoReturn:
     
     Performs initialization and starts the main application.
     """
+    # Import version info early
+    from src.core.version import get_version_info
+    
+    version_info = get_version_info()
+    
     logger.info("=" * 60)
     logger.info("SmartTub-MQTT Container Starting")
+    logger.info(f"Version: smarttub-mqtt {version_info['smarttub_mqtt']} | python-smarttub {version_info['python_smarttub']}")
     logger.info("=" * 60)
     
     try:
