@@ -23,10 +23,13 @@ from src.core.state_manager import StateManager
 from src.core.capability_detector import CapabilityDetector
 from src.core.item_prober import ItemProber
 from src.core.error_tracker import ErrorTracker, ErrorCategory, ErrorSeverity  # T058
+from src.core.yaml_fallback import YAMLFallbackPublisher
+from src.core.discovery_coordinator import DiscoveryCoordinator
 from src.mqtt.broker_client import MQTTBrokerClient
 from src.mqtt.command_manager import CommandManager
 from src.mqtt.log_bridge import configure_log_bridge
 from src.mqtt.topic_mapper import MQTTTopicMapper
+from src.mqtt.discovery_handler import DiscoveryMQTTHandler
 
 try:
     from src.web.app import create_app
@@ -251,9 +254,64 @@ async def _async_main(
                     spa_id = str(spa.id)
                     await capability_detector.detect_capabilities(spa_id)
                     logger.info(f"Detected capabilities for spa {spa_id}")
-            except Exception as e:
-                logger.warning(f"Initial capability detection failed: {e}")
+        except Exception as e:
+            logger.warning(f"Initial capability detection failed: {e}")
                 # This is not critical - capabilities will be refreshed later
+
+        # Initialize Background Discovery (Task 4.1 + 4.2)
+        discovery_coordinator = None
+        discovery_mqtt_handler = None
+        
+        try:
+            # Create Discovery Coordinator
+            discovery_coordinator = DiscoveryCoordinator(
+                smarttub_client=smarttub_client,
+                config=config
+            )
+            logger.info("Discovery Coordinator initialized")
+            
+            # Create Discovery MQTT Handler
+            discovery_mqtt_handler = DiscoveryMQTTHandler(
+                coordinator=discovery_coordinator,
+                topic_mapper=topic_mapper,
+                mqtt_client=broker
+            )
+            
+            # Start MQTT handler (subscribe to control topic)
+            await discovery_mqtt_handler.start()
+            logger.info("Discovery MQTT Handler started")
+            
+            # Task 4.1: YAML Fallback Publishing
+            # Always publish from YAML at startup (if available)
+            yaml_publisher = YAMLFallbackPublisher(topic_mapper=topic_mapper)
+            published = await yaml_publisher.publish_from_yaml()
+            if published:
+                logger.info("YAML fallback publishing completed")
+            
+            # Task 4.2: Conditional Discovery at Startup
+            import os
+            discovery_mode = os.getenv("DISCOVERY_MODE", "off").lower()
+            
+            if discovery_mode == "startup_quick":
+                logger.info("Starting background discovery (quick mode) via DISCOVERY_MODE env var...")
+                await discovery_coordinator.start_discovery(mode="quick")
+            elif discovery_mode == "startup_full":
+                logger.info("Starting background discovery (full mode) via DISCOVERY_MODE env var...")
+                await discovery_coordinator.start_discovery(mode="full")
+            elif discovery_mode == "startup_yaml":
+                logger.info("Starting background discovery (yaml_only mode) via DISCOVERY_MODE env var...")
+                await discovery_coordinator.start_discovery(mode="yaml_only")
+            else:
+                logger.info(f"Discovery mode: {discovery_mode} (manual control via WebUI or MQTT)")
+        
+        except Exception as e:
+            logger.error(f"Failed to initialize background discovery: {e}", exc_info=True)
+            error_tracker.track_error(
+                category=ErrorCategory.DISCOVERY,
+                message=f"Failed to initialize background discovery: {str(e)}",
+                severity=ErrorSeverity.ERROR,
+                error_code="DISCOVERY_INIT_FAILED"
+            )
 
         # Discovery gating: check CHECK_SMARTTUB flag (skip when running CLI discovery/show modes)
         if not discover and not show_discovery and not getattr(config, "check_smarttub", True):
@@ -335,8 +393,16 @@ async def _async_main(
         if config.web.enabled and HAS_WEB and HAS_UVICORN:
             logger.info("Starting Web UI", extra={"host": config.web.host, "port": config.web.port, "auth_enabled": config.web.auth_enabled})
             try:
-                # Create FastAPI app with error_tracker (T058)
-                app = create_app(config, state_manager, smarttub_client, capability_detector, error_tracker)
+                # Create FastAPI app with error_tracker (T058) and discovery_coordinator
+                app = create_app(
+                    config, 
+                    state_manager, 
+                    smarttub_client, 
+                    capability_detector, 
+                    error_tracker,
+                    progress_tracker=None,
+                    discovery_coordinator=discovery_coordinator
+                )
                 
                 # Start uvicorn server in background
                 # Configure uvicorn to use our loggers (T066)
@@ -475,6 +541,18 @@ async def _async_main(
             command_queue_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await command_queue_task
+        
+        # Stop Discovery MQTT Handler
+        if discovery_mqtt_handler is not None:
+            with contextlib.suppress(Exception):
+                await discovery_mqtt_handler.stop()
+                logger.info("Discovery MQTT Handler stopped")
+        
+        # Shutdown Discovery Coordinator
+        if discovery_coordinator is not None:
+            with contextlib.suppress(Exception):
+                await DiscoveryCoordinator.shutdown()
+                logger.info("Discovery Coordinator shutdown")
         
         with contextlib.suppress(Exception):
             cleanup_stack.close()
