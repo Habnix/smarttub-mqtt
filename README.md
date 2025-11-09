@@ -1,7 +1,7 @@
 ````markdown
 # smarttub-mqtt
 
-[![Version](https://img.shields.io/badge/version-0.2.2-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Habnix/smarttub-mqtt/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com/r/willnix/smarttub-mqtt)
@@ -26,15 +26,18 @@ A robust MQTT bridge for SmartTub hot tubs providing extensive telemetry, contro
 - Web UI API for error management
 
 ### 📊 Discovery & Capability Detection
-- Automatic spa detection on startup
-- Capability probing for pumps, lights, heater
-- **Systematic Light Mode Testing**: Tests all light modes and brightness levels
-- Progress tracking with real-time MQTT updates
-- YAML export of detected configuration
+- **Background Discovery**: Automated light mode testing with 3 modes (Full/Quick/YAML-only)
+- **WebUI Control**: User-friendly discovery page with live progress tracking
+- **MQTT Control**: Start/stop discovery via MQTT commands
+- **Startup Automation**: Optional automatic discovery on container startup
+- **Persistent Storage**: Results saved to YAML and published to MQTT
+- Automatic spa detection and capability probing
+- Real-time progress tracking with percentage completion
 
 ### 🌐 Web UI
 - Real-time dashboard with auto-refresh
 - Spa status and controls
+- **Discovery Page**: Interactive discovery control with live progress
 - Error log and subsystem status
 - Discovery progress display
 - Basic authentication (optional)
@@ -113,6 +116,8 @@ SMARTTUB_PASSWORD=your_password
 MQTT_BROKER_URL=mqtt://broker:1883
 MQTT_USERNAME=mqttuser
 MQTT_PASSWORD=mqttpass
+# Optional: Enable startup discovery
+DISCOVERY_MODE=startup_quick
 EOF
 ```
 
@@ -123,9 +128,13 @@ docker run -d \
   --name smarttub-mqtt \
   --restart unless-stopped \
   -v /opt/smarttub-mqtt/config:/config \
-  -p 8080:8080 \
-  smarttub-mqtt:latest
+  -p 8000:8000 \
+  willnix/smarttub-mqtt:latest
 ```
+
+3. Access WebUI
+
+Visit `http://<your-ip>:8000` for the dashboard and discovery page.
 
 ---
 
@@ -202,6 +211,47 @@ discovered_items:
 ```
 
 **Production Ready**: All critical components verified and operational ✅
+
+---
+
+## Background Discovery (NEW in v0.3.0)
+
+SmartTub-MQTT can automatically test which light modes your spa supports.
+
+### Features
+- 🔍 **Three Discovery Modes**: YAML-only (instant), Quick (~5 min), Full (~20 min)
+- 🌐 **WebUI Control**: Interactive discovery page at `/discovery`
+- 📡 **MQTT Control**: Start/stop via `smarttub-mqtt/discovery/control`
+- 💾 **Persistent Results**: Saved to `/config/discovered_items.yaml`
+- ⚡ **Startup Automation**: Optional automatic discovery on boot
+
+### Quick Start
+
+**Via WebUI**:
+1. Visit `http://<your-ip>:8000/discovery`
+2. Select a mode (Quick recommended)
+3. Click "Start Discovery"
+
+**Via MQTT**:
+```bash
+mosquitto_pub -t 'smarttub-mqtt/discovery/control' -m '{"action":"start","mode":"quick"}'
+```
+
+**Automatic at Startup**:
+```bash
+# In .env file
+DISCOVERY_MODE=startup_quick  # off, startup_quick, startup_full, startup_yaml
+```
+
+### Discovery Modes
+
+| Mode | Duration | Modes Tested | Use Case |
+|------|----------|--------------|----------|
+| **YAML Only** | Instant | 0 (loads saved) | Reload existing results |
+| **Quick** | ~5 min | 4 common modes | Quick verification |
+| **Full** | ~20 min | All 18 modes | Complete discovery |
+
+See [docs/discovery.md](./docs/discovery.md) for complete documentation.
 
 ---
 

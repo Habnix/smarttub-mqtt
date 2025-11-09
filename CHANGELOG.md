@@ -5,6 +5,129 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-11-09
+
+### Added - Background Discovery System
+
+**Core Infrastructure**:
+- **Discovery State Manager** (`src/core/discovery_state.py`): Thread-safe state management with observer pattern
+  - Real-time state tracking (idle, running, completed, failed)
+  - Progress monitoring with percentage calculation
+  - Observable state changes for UI updates
+- **Background Discovery Runner** (`src/core/background_discovery.py`): Non-blocking asyncio-based discovery execution
+  - Three discovery modes: FULL (~20 min), QUICK (~5 min), YAML_ONLY (instant)
+  - Graceful stop functionality
+  - Async task management
+- **Discovery Coordinator** (`src/core/discovery_coordinator.py`): High-level API with singleton pattern
+  - Unified interface for all discovery operations
+  - Automatic MQTT publishing
+  - Error handling and recovery
+
+**MQTT Integration**:
+- **Discovery Topics**: New topic structure for discovery control and status
+  - `smarttub-mqtt/discovery/status`: Real-time status updates (running/completed/failed)
+  - `smarttub-mqtt/discovery/control`: Command topic (start/stop discovery)
+  - `smarttub-mqtt/discovery/result`: Final results with detected modes (retained)
+- **MQTT Command Handler** (`src/mqtt/discovery_mqtt_handler.py`): Remote discovery control
+  - JSON-based commands: `{"action": "start", "mode": "quick"}`
+  - Auto-subscription and message handling
+
+**WebUI Integration**:
+- **Discovery REST API** (`src/web/api/discovery_api.py`): 5 new endpoints
+  - `GET /api/discovery/status`: Get current discovery status
+  - `POST /api/discovery/start`: Start discovery (mode parameter)
+  - `POST /api/discovery/stop`: Stop running discovery
+  - `GET /api/discovery/results`: Get discovery results
+  - `POST /api/discovery/reset`: Reset discovery state
+- **Discovery WebUI Page** (`src/web/templates/discovery.html`): Interactive discovery interface
+  - Mode selection cards (YAML Only, Quick, Full)
+  - Live progress bar with percentage
+  - Real-time status updates
+  - Results display with detected modes
+- **Navbar Integration**: Added "Discovery" link to main navigation
+
+**Startup Integration**:
+- **YAML Fallback Publisher** (`src/core/yaml_fallback.py`): Publish saved modes at startup
+  - Automatically loads `discovered_items.yaml` on boot
+  - Publishes `detected_modes` to MQTT for each light
+  - Topic: `{base}/{spa}/light/{light}/meta/detected_modes`
+- **Conditional Discovery** (`src/cli/run.py`): Startup automation via environment variable
+  - `DISCOVERY_MODE=off` (default): Manual discovery only
+  - `DISCOVERY_MODE=startup_quick`: Quick discovery on startup
+  - `DISCOVERY_MODE=startup_full`: Full discovery on startup
+  - `DISCOVERY_MODE=startup_yaml`: YAML-only (instant) on startup
+
+**Testing & Validation**:
+- **Unit Tests**: 6 validation scripts covering all components
+  - `tests/validate_discovery_state.py`: State management tests
+  - `tests/validate_background_discovery.py`: Discovery runner tests
+  - `tests/validate_discovery_coordinator_simple.py`: Coordinator API tests
+  - `tests/validate_discovery_mqtt.py`: MQTT integration tests
+  - `tests/validate_discovery_webui.py`: WebUI endpoint tests
+  - `tests/validate_startup_integration.py`: Startup integration tests
+- **Integration Tests** (`tests/integration/test_discovery_flow.py`): Complete workflow tests
+  - Full discovery flow (start → progress → completion)
+  - MQTT command handling
+  - Concurrent operation prevention
+  - Stop functionality
+  - Error handling
+  - State reset
+
+**Documentation**:
+- **Discovery Guide** (`docs/discovery.md`): Comprehensive 200+ line guide
+  - Feature overview and discovery modes
+  - Usage examples (WebUI, MQTT, API)
+  - Configuration and troubleshooting
+  - Performance considerations
+  - Best practices
+- **README Updates**: Background Discovery section with quick start
+- **CHANGELOG**: This detailed changelog entry
+
+### Changed
+- **Main Application** (`src/cli/run.py`): Integrated discovery components
+  - Initialize Discovery Coordinator after SmartTub client
+  - YAML Fallback publishing on every startup
+  - Conditional discovery based on DISCOVERY_MODE
+  - Pass discovery_coordinator to FastAPI app
+  - Graceful shutdown handling
+
+### Technical Details
+- **Discovery Modes**:
+  - FULL: Tests all 18 light modes, 20 seconds per mode, ~20 minutes total
+  - QUICK: Tests 4 common modes (OFF, ON, PURPLE, WHITE), 8 seconds per mode, ~5 minutes total
+  - YAML_ONLY: Loads saved results only, instant (<1 second)
+- **Progress Tracking**:
+  - Percentage calculation: `(modes_tested / modes_total) × 100`
+  - Real-time updates via MQTT and WebUI
+  - Tracks current spa, light, and mode being tested
+- **Storage Format**: YAML with detected modes per light
+  ```yaml
+  discovered_items:
+    spa-001:
+      lights:
+        - id: zone_1
+          detected_modes: [OFF, ON, PURPLE, WHITE]
+  ```
+- **MQTT Payloads**:
+  - Status: JSON with state, mode, progress object
+  - Result: JSON with completion timestamp, YAML path, detected modes
+  - Control: JSON commands (`{"action": "start", "mode": "quick"}`)
+- **Thread Safety**: asyncio.Lock for concurrent access protection
+- **Observer Pattern**: StateObserver interface for reactive updates
+
+### Migration Notes
+- **New Environment Variable**: `DISCOVERY_MODE` (optional)
+  - Default: `off` (no change in behavior)
+  - Set to `startup_quick` for automatic quick discovery
+- **New MQTT Topics**: Subscribe to `smarttub-mqtt/discovery/#` for discovery updates
+- **New WebUI Route**: `/discovery` page now available
+- **Backward Compatible**: All existing functionality unchanged
+
+### Performance Impact
+- **Startup**: +0.5s for YAML loading (if file exists)
+- **Runtime**: Minimal (discovery runs in background)
+- **Discovery**: 5 min (quick) to 20 min (full) depending on mode
+
 ## [0.2.3] - 2025-11-09
 
 ### Added
@@ -111,6 +234,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic authentication
 - Structured logging
 
+[0.3.0]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.3...v0.3.0
+[0.2.3]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Habnix/smarttub-mqtt/compare/v0.1.2...v0.2.0
