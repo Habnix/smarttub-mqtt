@@ -234,6 +234,27 @@ async def _async_main(
         # Initialize SmartTub client before using it
         await smarttub_client.initialize()
 
+        # Publish global version metadata once at startup
+        try:
+            version_meta_messages = topic_mapper.publish_version_meta()
+            topic_mapper.publish_messages(version_meta_messages)
+            logger.info("Published global version metadata")
+        except Exception as e:
+            logger.warning(f"Failed to publish version metadata: {e}")
+
+        # Perform initial capability detection for all spas
+        if getattr(config, "check_smarttub", True):
+            logger.info("Starting initial capability detection")
+            try:
+                # Get all spa IDs and detect capabilities
+                for spa in smarttub_client.spas:
+                    spa_id = str(spa.id)
+                    await capability_detector.detect_capabilities(spa_id)
+                    logger.info(f"Detected capabilities for spa {spa_id}")
+            except Exception as e:
+                logger.warning(f"Initial capability detection failed: {e}")
+                # This is not critical - capabilities will be refreshed later
+
         # Discovery gating: check CHECK_SMARTTUB flag (skip when running CLI discovery/show modes)
         if not discover and not show_discovery and not getattr(config, "check_smarttub", True):
             broker.publish(f"{config.mqtt.base_topic}/status", "check_smarttub_disabled", retain=True)

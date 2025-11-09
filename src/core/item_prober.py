@@ -480,17 +480,33 @@ class ItemProber:
                     # Ensure per-light raw doesn't duplicate spa metadata
                     if isinstance(raw, dict) and 'spa' in raw:
                         raw.pop('spa', None)
-                    item = {"id": lid, "zone": zone, "raw": raw, "supports": supports}
+                    
+                    item = {
+                        "id": lid,
+                        "raw": raw, 
+                        "supports": supports,
+                        "detected_modes": []  # Will be populated by light mode discovery
+                    }
                     result['lights'].append(item)
             else:
                 if isinstance(lights, list):
                     raw_light_objects = lights
                     for l in raw_light_objects:
-                        lid = l.get('id') if isinstance(l, dict) else getattr(l, 'id', None)
+                        # Compute lid with fallback to zone_X if id is None
+                        if isinstance(l, dict):
+                            lid = l.get('id') or f"zone_{l.get('zone')}"
+                        else:
+                            lid = getattr(l, 'id', None) or f"zone_{getattr(l, 'zone', 'unknown')}"
+                        
                         raw_serialized = self._make_serializable(l)
                         if isinstance(raw_serialized, dict) and 'spa' in raw_serialized:
                             raw_serialized.pop('spa', None)
-                        result['lights'].append({"id": lid, "raw": raw_serialized})
+                        
+                        result['lights'].append({
+                            "id": lid, 
+                            "raw": raw_serialized,
+                            "detected_modes": []
+                        })
                 else:
                     raw_light_objects = []
         except Exception as e:
@@ -623,35 +639,51 @@ class ItemProber:
         # Try to persist into /config so the directory can be mounted into the container.
         config_dir = Path('/config')
         config_file = config_dir / 'discovered_items.yaml'
+        raw_data_file = config_dir / 'spa_raw_data.yaml'
         
         # Fallback to local config directory for development
         local_config_dir = Path(__file__).resolve().parents[1] / 'config'
         local_config_file = local_config_dir / 'discovered_items.yaml'
+        local_raw_data_file = local_config_dir / 'spa_raw_data.yaml'
         
         # Sort keys in logical order and clean up duplicates
         sorted_results = {}
-        key_order = [
+        raw_data_results = {}
+        
+        # Keys that go into discovered_items.yaml (compact version)
+        compact_keys = [
             'spa_id', 'discovered_at', 'capabilities', 'spa', 'heater',
-            'pumps', 'lights', 'status_full', 'debug_status', 'errors',
-            'reminders', 'energy_usage', 'capabilities_python-smarttub'
+            'pumps', 'lights'
+        ]
+        
+        # Keys that go into spa_raw_data.yaml (detailed raw data)
+        raw_data_keys = [
+            'status_full', 'debug_status', 'capabilities_python-smarttub',
+            'errors', 'reminders', 'energy_usage'
         ]
 
         for spa_id, result in discovery_results.items():
-            # Sort the result keys according to our preferred order
-            sorted_result = {}
-            for key in key_order:
+            # Build compact result for discovered_items.yaml
+            compact_result = {}
+            for key in compact_keys:
                 if key in result:
-                    sorted_result[key] = result[key]
-
-            # Add any remaining keys not in our order
-            for key in sorted(result.keys()):
-                if key not in sorted_result:
-                    sorted_result[key] = result[key]
+                    compact_result[key] = result[key]
+            
+            # Build raw data result for spa_raw_data.yaml
+            raw_result = {}
+            for key in raw_data_keys:
+                if key in result:
+                    raw_result[key] = result[key]
+            
+            # Add any remaining keys to raw data (safety net)
+            for key in result.keys():
+                if key not in compact_keys and key not in raw_data_keys:
+                    raw_result[key] = result[key]
 
             # Clean up duplicates: since spa_id is already the key, we can remove redundant spa info
             # Keep only essential spa info (name, model) if present
-            if 'spa' in sorted_result and isinstance(sorted_result['spa'], dict):
-                spa_info = sorted_result['spa']
+            if 'spa' in compact_result and isinstance(compact_result['spa'], dict):
+                spa_info = compact_result['spa']
                 # Keep only essential fields, remove duplicates
                 essential_spa = {}
                 if 'name' in spa_info:
@@ -659,16 +691,16 @@ class ItemProber:
                 if 'model' in spa_info:
                     essential_spa['model'] = spa_info['model']
                 if essential_spa:
-                    sorted_result['spa'] = essential_spa
+                    compact_result['spa'] = essential_spa
                 else:
                     # If no essential info, remove the spa key entirely
-                    sorted_result.pop('spa', None)
+                    compact_result.pop('spa', None)
 
             # Shorten state_writetopic paths by removing spa_id (since it's already in the parent key)
             # T052: Updated to handle _writetopic suffix instead of set_ prefix
             for component in ['pumps', 'lights']:
-                if component in sorted_result and isinstance(sorted_result[component], list):
-                    for item in sorted_result[component]:
+                if component in compact_result and isinstance(compact_result[component], list):
+                    for item in compact_result[component]:
                         if 'state_writetopic' in item and item['state_writetopic']:
                             # Remove spa_id from topic path: 
                             # base_topic/spa_id/component/id/state_writetopic -> component/id/state_writetopic
@@ -677,13 +709,19 @@ class ItemProber:
                                 # Reconstruct without spa_id: component/id/state_writetopic
                                 item['state_writetopic'] = f"{component}/{topic_parts[-2]}/{topic_parts[-1]}"
 
-            sorted_results[spa_id] = sorted_result
+            sorted_results[spa_id] = compact_result
+            raw_data_results[spa_id] = raw_result
 
-        # Save under top-level key 'discovered_items' mapping spa_id -> payload
-        to_write = {"discovered_items": sorted_results}
+        # Save compact version under 'discovered_items'
+        compact_data = {"discovered_items": sorted_results}
+        
+        # Save raw data under 'discovered_items' (keeping same structure for consistency)
+        raw_data = {"discovered_items": raw_data_results}
 
+        # Serialize both
         try:
-            text = yaml.safe_dump(to_write, sort_keys=False)  # Don't sort keys again, we already did it
+            compact_text = yaml.safe_dump(compact_data, sort_keys=False)
+            raw_text = yaml.safe_dump(raw_data, sort_keys=False)
         except Exception as e:
             logger.error(f"Failed to serialize discovery results to YAML: {e}")
             
@@ -701,8 +739,10 @@ class ItemProber:
         config_success = False
         try:
             config_dir.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(text, encoding='utf-8')
+            config_file.write_text(compact_text, encoding='utf-8')
+            raw_data_file.write_text(raw_text, encoding='utf-8')
             logger.info(f"Wrote discovered items to {config_file}")
+            logger.info(f"Wrote raw data to {raw_data_file}")
             config_success = True
         except Exception as e:
             logger.debug(f"Could not write to {config_file}: {e}")
@@ -721,8 +761,10 @@ class ItemProber:
         if not config_success:
             try:
                 local_config_dir.mkdir(parents=True, exist_ok=True)
-                local_config_file.write_text(text, encoding='utf-8')
+                local_config_file.write_text(compact_text, encoding='utf-8')
+                local_raw_data_file.write_text(raw_text, encoding='utf-8')
                 logger.info(f"Wrote discovered items to {local_config_file} (fallback)")
+                logger.info(f"Wrote raw data to {local_raw_data_file} (fallback)")
             except Exception as e:
                 logger.warning(f"Could not write to fallback location {local_config_file}: {e}")
 
@@ -730,9 +772,12 @@ class ItemProber:
         # discovery output is visible to developers running in this workspace.
         try:
             repo_path = Path(__file__).resolve().parents[2] / 'tests' / 'discovered_items.generated.yaml'
+            repo_raw_path = Path(__file__).resolve().parents[2] / 'tests' / 'spa_raw_data.generated.yaml'
             repo_path.parent.mkdir(parents=True, exist_ok=True)
-            repo_path.write_text(text, encoding='utf-8')
+            repo_path.write_text(compact_text, encoding='utf-8')
+            repo_raw_path.write_text(raw_text, encoding='utf-8')
             logger.info(f"Wrote discovered items copy to {repo_path}")
+            logger.info(f"Wrote raw data copy to {repo_raw_path}")
         except Exception:
             # Do not fail the main flow if writing into the workspace fails
             logger.debug("Failed to write discovered items into workspace tests directory")

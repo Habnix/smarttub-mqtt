@@ -1,0 +1,35 @@
+{
+  "device_id": null,
+  "zone": 1,
+  "timestamp": "2025-11-09T12:06:36.832953",
+  "total_tests": 2,
+  "successful": 0,
+  "results": [
+    {
+      "mode": "OFF",
+      "success": false,
+      "state_before": {
+        "mode": "ERROR",
+        "error": "'SpaLight' object has no attribute 'get_status'"
+      },
+      "state_after": {
+        "mode": "ERROR",
+        "error": "'SpaLight' object has no attribute 'get_status'"
+      },
+      "mode_changed": false,
+      "color_changed": false,
+      "intensity_changed": false,
+      "command_duration": 4.249781608581543,
+      "total_duration": 8.256109237670898,
+      "wait_time": 3.0,
+      "verify_attempts": 2,
+      "timestamp": "2025-11-09T12:06:21.676939"
+    },
+    {
+      "mode": "PURPLE",
+      "success": false,
+      "error": "State change not reflected within timeout period",
+      "timestamp": "2025-11-09T12:06:36.832867"
+    }
+  ]
+}

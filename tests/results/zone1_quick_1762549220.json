@@ -1,0 +1,57 @@
+{
+  "device_id": null,
+  "zone": 1,
+  "timestamp": "2025-11-07T22:00:56.993807",
+  "total_tests": 8,
+  "successful": 0,
+  "results": [
+    {
+      "mode": "OFF",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:27.243006"
+    },
+    {
+      "mode": "ON",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:30.709041"
+    },
+    {
+      "mode": "PURPLE",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:34.027469"
+    },
+    {
+      "mode": "ORANGE",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:37.667856"
+    },
+    {
+      "mode": "RED",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:41.127545"
+    },
+    {
+      "mode": "BLUE",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:47.119822"
+    },
+    {
+      "mode": "WHITE",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:50.779038"
+    },
+    {
+      "mode": "PARTY",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-07T22:00:56.993756"
+    }
+  ]
+}

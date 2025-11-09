@@ -1,0 +1,57 @@
+{
+  "device_id": null,
+  "zone": 2,
+  "timestamp": "2025-11-07T21:57:50.943275",
+  "total_tests": 8,
+  "successful": 0,
+  "results": [
+    {
+      "mode": "OFF",
+      "success": false,
+      "error": "",
+      "timestamp": "2025-11-07T21:57:33.424246"
+    },
+    {
+      "mode": "ON",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:35.925396"
+    },
+    {
+      "mode": "PURPLE",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:38.428048"
+    },
+    {
+      "mode": "ORANGE",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:40.932616"
+    },
+    {
+      "mode": "RED",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:43.435822"
+    },
+    {
+      "mode": "BLUE",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:45.938045"
+    },
+    {
+      "mode": "WHITE",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:48.440362"
+    },
+    {
+      "mode": "PARTY",
+      "success": false,
+      "error": "'str' object has no attribute 'name'",
+      "timestamp": "2025-11-07T21:57:50.943222"
+    }
+  ]
+}

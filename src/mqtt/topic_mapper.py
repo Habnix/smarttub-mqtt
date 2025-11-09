@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any, List
 
 from src.core.config_loader import AppConfig
 import logging
+import yaml
 
 logger = logging.getLogger("smarttub.mqtt.mapper")
 
@@ -293,6 +295,9 @@ class MQTTTopicMapper:
                 
                 # T052: per-light meta topic documenting write topics for OpenHAB
                 try:
+                    # Load detected_modes from YAML if available
+                    detected_modes = self._load_detected_modes_for_light(spa_id, lid)
+                    
                     meta = {
                         "id": lid,
                         "zone": light.get("zone"),
@@ -307,6 +312,7 @@ class MQTTTopicMapper:
                         "mode_writetopic": f"{base_topic}/lights/{lid}/mode_writetopic" if light.get("mode") is not None else None,
                         "color_writetopic": f"{base_topic}/lights/{lid}/color_writetopic" if light.get("color") is not None else None,
                         "brightness_writetopic": f"{base_topic}/lights/{lid}/brightness_writetopic" if light.get("brightness") is not None else None,
+                        "detected_modes": detected_modes,  # Add detected modes from YAML
                         "last_updated": timestamp,
                     }
                     topic_meta = f"{base_topic}/lights/{lid}/meta"
@@ -317,8 +323,9 @@ class MQTTTopicMapper:
                         retain=True
                     ))
                     logger.info(f"created-light-meta", extra={"topic": topic_meta, "spa_id": spa_id, "light_id": lid})
-                except Exception:
+                except Exception as e:
                     # don't let a meta serialization error break snapshot publish
+                    logger.warning(f"Error creating light meta for {lid}: {e}")
                     pass
                     
             messages.append(MQTTMessage(
@@ -416,6 +423,96 @@ class MQTTTopicMapper:
             messages.append(MQTTMessage(topic=topic, payload=payload, qos=1, retain=True))
 
         return messages
+
+    def publish_version_meta(self) -> List[MQTTMessage]:
+        """Publish global version metadata.
+        
+        Publishes version information to global meta topics:
+        - {base_topic}/meta/smarttub-mqtt: smarttub-mqtt version only
+        - {base_topic}/meta/python-smarttub: python-smarttub version only
+        
+        Returns:
+            List of MQTT messages with version information
+        """
+        from src.core.version import get_version_info
+        version_info = get_version_info()
+        
+        messages = []
+        
+        # Publish smarttub-mqtt version to meta/smarttub-mqtt
+        topic_smarttub_mqtt = f"{self.config.mqtt.base_topic}/meta/smarttub-mqtt"
+        payload_smarttub_mqtt = version_info["smarttub_mqtt"]
+        messages.append(MQTTMessage(topic=topic_smarttub_mqtt, payload=payload_smarttub_mqtt, qos=1, retain=True))
+        
+        # Publish python-smarttub version to meta/python-smarttub
+        topic_python_smarttub = f"{self.config.mqtt.base_topic}/meta/python-smarttub"
+        payload_python_smarttub = version_info["python_smarttub"]
+        messages.append(MQTTMessage(topic=topic_python_smarttub, payload=payload_python_smarttub, qos=1, retain=True))
+        
+        return messages
+
+    def _load_detected_modes_for_light(self, spa_id: str, light_id: str) -> List[str]:
+        """Load detected_modes from discovered_items.yaml for a specific light.
+        
+        Args:
+            spa_id: The spa identifier
+            light_id: The light identifier (e.g., "zone_1")
+            
+        Returns:
+            List of detected modes, empty if none found
+        """
+        try:
+            # Try multiple paths where the YAML might be
+            yaml_paths = [
+                Path("/config/discovered_items.yaml"),
+                Path("config/discovered_items.yaml"),
+                Path("discovered_items.yaml")
+            ]
+            
+            yaml_path = None
+            for path in yaml_paths:
+                if path.exists():
+                    yaml_path = path
+                    logger.debug(f"Found YAML at {yaml_path}")
+                    break
+            
+            if not yaml_path:
+                logger.debug(f"No discovered_items.yaml found for {spa_id}/{light_id}")
+                return []
+            
+            # Load YAML file
+            with open(yaml_path, 'r') as f:
+                data = yaml.safe_load(f)
+            
+            if not data or 'discovered_items' not in data:
+                logger.debug(f"No discovered_items key in YAML for {spa_id}/{light_id}")
+                return []
+            
+            # Get spa data
+            spa_data = data['discovered_items'].get(spa_id)
+            if not spa_data:
+                logger.debug(f"No spa data found for {spa_id} in YAML")
+                return []
+            
+            # Get lights data
+            lights = spa_data.get('lights', [])
+            if not lights:
+                logger.debug(f"No lights found for {spa_id} in YAML")
+                return []
+            
+            # Find the specific light by ID
+            for light in lights:
+                if light.get('id') == light_id:
+                    detected = light.get('detected_modes', [])
+                    logger.debug(f"Found detected_modes for {spa_id}/{light_id}: {detected}")
+                    return detected
+            
+            logger.debug(f"Light {light_id} not found for {spa_id} in YAML")
+            return []
+            
+        except Exception as e:
+            logger.debug(f"Error loading detected_modes from YAML for {spa_id}/{light_id}: {e}")
+            return []
 
 
 # Convenience function for backward compatibility with tests

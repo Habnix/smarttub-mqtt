@@ -44,6 +44,12 @@
             </a>
             <div class="navbar-nav ms-auto">
                 <span class="navbar-text me-3">
+                    <small>
+                        smarttub-mqtt: <strong>{{ versions.smarttub_mqtt }}</strong> | 
+                        python-smarttub: <strong>{{ versions.python_smarttub }}</strong>
+                    </small>
+                </span>
+                <span class="navbar-text me-3">
                     Last updated: <span id="last-updated">{{ last_updated }}</span>
                 </span>
                 <a class="nav-link" href="/api/state" target="_blank">API</a>
@@ -202,6 +208,16 @@
                             <div class="text-muted">
                                 Brightness: {{ light.brightness|default(0) }}%
                             </div>
+                            {% if spa_caps.lights and spa_caps.lights.modes %}
+                            <div class="text-muted mt-2">
+                                <small>Available Modes ({{ spa_caps.lights.modes|length }}):</small>
+                                <div style="max-height: 100px; overflow-y: auto; font-size: 0.75rem;">
+                                    {% for mode in spa_caps.lights.modes %}
+                                    <span class="badge bg-secondary me-1 mb-1">{{ mode }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
                         </div>
                         <div class="mt-3">
                             <div class="progress">

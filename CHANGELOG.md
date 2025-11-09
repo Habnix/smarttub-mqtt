@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2025-11-09
+
+### Added
+- **Light mode detection in MQTT topics**: Added `detected_modes` field to light meta topics
+  - Per-light meta topics now include `detected_modes: []` array from `discovered_items.yaml`
+  - Example: `smarttub-mqtt/100946961/lights/zone_1/meta` now shows which modes were successfully tested
+  - Enables OpenHAB/Home Assistant to know which modes are actually supported by the hardware
+  - Falls back to empty array `[]` if no detection has been run yet
+
+- **Version information system**: Centralized version management and display
+  - New `src/core/version.py` module for version queries
+  - MQTT topics: `smarttub-mqtt/meta/smarttub-mqtt` and `smarttub-mqtt/meta/python-smarttub`
+  - WebUI navbar displays: "smarttub-mqtt: 0.2.3 | python-smarttub: 0.0.45"
+  - Version topics are now global (not spa-specific) as they apply to entire system
+
+- **Light modes capability tracking**: Enhanced capability detection for light features
+  - `SpaCapabilities` class now includes `light_modes` field
+  - Available modes loaded from `python-smarttub.SpaLight.LightMode` enum (18 modes)
+  - WebUI light cards show available modes with badge display
+  - Capability topic includes full mode list for integration configuration
+
+### Changed
+- **Version MQTT topic structure**: Moved from spa-specific to global
+  - Old: `smarttub-mqtt/100946961/meta/smarttub-mqtt`
+  - New: `smarttub-mqtt/meta/smarttub-mqtt`
+  - Reasoning: Version information is system-wide, not spa-dependent
+
+### Technical Details
+- `detected_modes` loaded from YAML at runtime via `_load_detected_modes_for_light()`
+- Searches for YAML in `/config/`, `config/`, and current directory
+- Light meta topics are retained and published on every state update
+- Empty `detected_modes: []` is normal before first light mode discovery run
+
 ## [0.2.2] - 2025-11-08
 
 ### Fixed

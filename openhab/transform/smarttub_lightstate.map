@@ -1,0 +1,5 @@
+// Light State Mapping
+// Basierend auf echten Werten: on, off
+on=An
+off=Aus
+-=Unbekannt

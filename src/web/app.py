@@ -119,6 +119,10 @@ class WebApp:
         async def overview(request: Request) -> HTMLResponse:
             """Render main overview page."""
             try:
+                # Get version information
+                from src.core.version import get_version_info
+                version_info = get_version_info()
+                
                 # Get current state for template
                 current_state = self.state_manager._last_snapshot
                 if current_state is None:
@@ -137,6 +141,7 @@ class WebApp:
                         "state": current_state,
                         "capabilities": capabilities,
                         "config": self.config,
+                        "versions": version_info,
                         "last_updated": datetime.now(timezone.utc).isoformat()
                     }
                 )

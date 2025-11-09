@@ -1,0 +1,94 @@
+// SmartTub MQTT Items Configuration for OpenHAB 5
+// Basierend auf echten MQTT Topics
+
+// ============================================================================
+// Gruppen
+// ============================================================================
+Group SmartTub "SmartTub Spa" <bath>
+Group SmartTub_Status "Status" <status> (SmartTub)
+Group SmartTub_Heater "Heizung" <heating> (SmartTub)
+Group SmartTub_Pumps "Pumpen" <pump> (SmartTub)
+Group SmartTub_Lights "Beleuchtung" <light> (SmartTub)
+
+// ============================================================================
+// Bridge & Meta Status
+// ============================================================================
+String SmartTub_BridgeStatus "Bridge Status [%s]" <network> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:bridge_status" }
+String SmartTub_MetaErrors "Meta Errors" <error> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:meta_errors" }
+String SmartTub_MetaMQTT "Meta MQTT" <network> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:meta_mqtt" }
+
+// ============================================================================
+// Discovery
+// ============================================================================
+String SmartTub_DiscoveryStatus "Discovery Status [%s]" <settings> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:discovery_status" }
+String SmartTub_DiscoveryResult "Discovery Result" <settings> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:discovery_result" }
+
+// ============================================================================
+// Spa Status
+// ============================================================================
+String SmartTub_SpaState "Spa Zustand [%s]" <status> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:spa_state" }
+Number:Temperature SmartTub_WaterTemp "Wasser Temperatur [%.1f °C]" <temperature> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:spa_water_temp" }
+DateTime SmartTub_SpaLastUpdated "Spa Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Status) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:spa_last_updated" }
+
+// ============================================================================
+// Heater
+// ============================================================================
+String SmartTub_HeaterState "Heizung Status [MAP(smarttub_heater.map):%s]" <heating> (SmartTub_Heater) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:heater_state" }
+Number:Temperature SmartTub_HeaterTemp "Heizung Temperatur [%.1f °C]" <temperature> (SmartTub_Heater) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:heater_temp" }
+Number:Temperature SmartTub_TargetTemp "Ziel Temperatur [%.1f °C]" <temperature> (SmartTub_Heater) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:heater_target_temp" }
+String SmartTub_HeaterMeta "Heater Meta" <text> (SmartTub_Heater) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:heater_meta" }
+DateTime SmartTub_HeaterLastUpdated "Heizung Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Heater) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:heater_last_updated" }
+
+// ============================================================================
+// Pumpen
+// ============================================================================
+
+// Pumps Global
+DateTime SmartTub_PumpsLastUpdated "Pumpen Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pumps_last_updated" }
+
+// Pump P1 (JET)
+String SmartTub_PumpP1ID "Pumpe P1 ID [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p1_id" }
+String SmartTub_PumpP1State "Pumpe P1 Status [MAP(smarttub_pumpstate.map):%s]" <pump> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p1_state" }
+String SmartTub_PumpP1Type "Pumpe P1 Type [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p1_type" }
+String SmartTub_PumpP1Speed "Pumpe P1 Geschwindigkeit [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p1_speed" }
+String SmartTub_PumpP1Meta "Pumpe P1 Meta" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p1_meta" }
+DateTime SmartTub_PumpP1LastUpdated "Pumpe P1 Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p1_last_updated" }
+
+// Pump P2 (JET)
+String SmartTub_PumpP2ID "Pumpe P2 ID [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p2_id" }
+String SmartTub_PumpP2State "Pumpe P2 Status [MAP(smarttub_pumpstate.map):%s]" <pump> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p2_state" }
+String SmartTub_PumpP2Type "Pumpe P2 Type [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p2_type" }
+String SmartTub_PumpP2Speed "Pumpe P2 Geschwindigkeit [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p2_speed" }
+String SmartTub_PumpP2Meta "Pumpe P2 Meta" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p2_meta" }
+DateTime SmartTub_PumpP2LastUpdated "Pumpe P2 Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_p2_last_updated" }
+
+// Pump CP (CIRCULATION)
+String SmartTub_PumpCPID "Pumpe CP ID [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_cp_id" }
+String SmartTub_PumpCPState "Pumpe CP Status [MAP(smarttub_pumpstate.map):%s]" <pump> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_cp_state" }
+String SmartTub_PumpCPType "Pumpe CP Type [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_cp_type" }
+String SmartTub_PumpCPSpeed "Pumpe CP Geschwindigkeit [%s]" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_cp_speed" }
+String SmartTub_PumpCPMeta "Pumpe CP Meta" <text> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_cp_meta" }
+DateTime SmartTub_PumpCPLastUpdated "Pumpe CP Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Pumps) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:pump_cp_last_updated" }
+
+// ============================================================================
+// Lichter
+// ============================================================================
+
+// Lights Global
+DateTime SmartTub_LightsLastUpdated "Lichter Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:lights_last_updated" }
+
+// Light Zone 1 (INTERIOR)
+String SmartTub_Light1State "Licht Zone 1 Status [MAP(smarttub_lightstate.map):%s]" <light> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone1_state" }
+String SmartTub_Light1Mode "Licht Zone 1 Modus [MAP(smarttub_lightmode.map):%s]" <colorwheel> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone1_mode" }
+Color SmartTub_Light1Color "Licht Zone 1 Farbe" <colorwheel> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone1_color" }
+Dimmer SmartTub_Light1Brightness "Licht Zone 1 Helligkeit [%d %%]" <slider> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone1_brightness" }
+String SmartTub_Light1Meta "Licht Zone 1 Meta" <text> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone1_meta" }
+DateTime SmartTub_Light1LastUpdated "Licht Zone 1 Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone1_last_updated" }
+
+// Light Zone 2 (EXTERIOR)
+String SmartTub_Light2State "Licht Zone 2 Status [MAP(smarttub_lightstate.map):%s]" <light> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone2_state" }
+String SmartTub_Light2Mode "Licht Zone 2 Modus [MAP(smarttub_lightmode.map):%s]" <colorwheel> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone2_mode" }
+Color SmartTub_Light2Color "Licht Zone 2 Farbe" <colorwheel> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone2_color" }
+Dimmer SmartTub_Light2Brightness "Licht Zone 2 Helligkeit [%d %%]" <slider> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone2_brightness" }
+String SmartTub_Light2Meta "Licht Zone 2 Meta" <text> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone2_meta" }
+DateTime SmartTub_Light2LastUpdated "Licht Zone 2 Letzte Aktualisierung [%1$tF %1$tR]" <time> (SmartTub_Lights) { channel="mqtt:topic:<BROKER_ID>:smarttub_spa:light_zone2_last_updated" }

@@ -279,6 +279,10 @@ class MQTTBrokerClient:
             base_topic = (self._mqtt_config.base_topic or "smarttub-mqtt").rstrip("/")
             self._meta_topic = f"{base_topic}/meta/mqtt"
         
+        # Get version information
+        from src.core.version import get_version_info
+        version_info = get_version_info()
+        
         # Build meta payload
         now = time.time()
         uptime = int(now - self._connect_time) if self._connect_time else 0
@@ -287,6 +291,10 @@ class MQTTBrokerClient:
             "status": "connected" if self._connected else ("error" if self._last_error else "disconnected"),
             "broker": self._mqtt_config.broker_url,
             "client_id": getattr(self._mqtt_config, "client_id", "smarttub-mqtt"),
+            "versions": {
+                "smarttub_mqtt": version_info["smarttub_mqtt"],
+                "python_smarttub": version_info["python_smarttub"],
+            },
             "connection": {
                 "connected": self._connected,
                 "uptime_seconds": uptime if self._connected else 0,

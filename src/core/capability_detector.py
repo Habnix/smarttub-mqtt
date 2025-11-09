@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 from src.mqtt.topic_mapper import MQTTTopicMapper
 
@@ -32,6 +36,7 @@ class SpaCapabilities:
 
         self.light_supported = False
         self.light_colors: List[str] = []
+        self.light_modes: List[str] = []  # Available light modes
         self.light_brightness_supported = False
 
         # Advanced features
@@ -69,6 +74,7 @@ class SpaCapabilities:
                 "light": {
                     "supported": self.light_supported,
                     "colors": self.light_colors,
+                    "modes": self.light_modes,
                     "brightness_supported": self.light_brightness_supported
                 }
             },
@@ -112,6 +118,7 @@ class SpaCapabilities:
         light = components.get("light", {})
         caps.light_supported = light.get("supported", False)
         caps.light_colors = light.get("colors", [])
+        caps.light_modes = light.get("modes", [])
         caps.light_brightness_supported = light.get("brightness_supported", False)
 
         advanced = data.get("advanced_features", {})
@@ -185,6 +192,9 @@ class CapabilityDetector:
 
             # Detect light capabilities
             await self._detect_light_capabilities(capabilities, spa_data)
+            
+            # Load detected_modes from discovered_items.yaml if available
+            await self._load_detected_modes_from_yaml(capabilities, spa_id)
 
             # Detect advanced features
             await self._detect_advanced_features(capabilities, status)
@@ -273,6 +283,19 @@ class CapabilityDetector:
                 # Basic color support
                 capabilities.light_colors = ["white", "blue", "green", "red", "purple"]
 
+                # Get all available light modes from python-smarttub
+                try:
+                    import smarttub
+                    capabilities.light_modes = [mode.name for mode in smarttub.SpaLight.LightMode]
+                except Exception as e:
+                    logger.debug(f"Could not get light modes from python-smarttub: {e}")
+                    # Fallback to known modes
+                    capabilities.light_modes = [
+                        "PURPLE", "ORANGE", "RED", "YELLOW", "GREEN", "AQUA", "BLUE", "WHITE",
+                        "AMBER", "HIGH_SPEED_COLOR_WHEEL", "HIGH_SPEED_WHEEL", "LOW_SPEED_WHEEL",
+                        "FULL_DYNAMIC_RGB", "AUTO_TIMER_EXTERIOR", "PARTY", "COLOR_WHEEL", "OFF", "ON"
+                    ]
+
                 # Assume brightness control is available
                 capabilities.light_brightness_supported = True
 
@@ -327,6 +350,61 @@ class CapabilityDetector:
             capabilities.ph_monitoring = False
             capabilities.orp_monitoring = False
             capabilities.turbidity_monitoring = False
+
+    async def _load_detected_modes_from_yaml(self, capabilities: SpaCapabilities, spa_id: str) -> None:
+        """Load detected_modes from discovered_items.yaml if available.
+        
+        This reads the actual tested/detected modes from the YAML file
+        and uses them instead of the default list of all possible modes.
+        """
+        try:
+            # Try multiple paths where the YAML might be
+            yaml_paths = [
+                Path("/config/discovered_items.yaml"),
+                Path("config/discovered_items.yaml"),
+                Path("discovered_items.yaml")
+            ]
+            
+            yaml_path = None
+            for path in yaml_paths:
+                if path.exists():
+                    yaml_path = path
+                    break
+            
+            if not yaml_path:
+                logger.debug("discovered_items.yaml not found, using default modes")
+                return
+            
+            # Load YAML file
+            with open(yaml_path, 'r') as f:
+                data = yaml.safe_load(f)
+            
+            if not data or 'discovered_items' not in data:
+                return
+            
+            # Get spa data
+            spa_data = data['discovered_items'].get(spa_id)
+            if not spa_data:
+                return
+            
+            # Get lights data
+            lights = spa_data.get('lights', [])
+            if not lights:
+                return
+            
+            # Collect all detected modes from all light zones
+            detected_modes = set()
+            for light in lights:
+                modes = light.get('detected_modes', [])
+                detected_modes.update(modes)
+            
+            # If we found detected modes, use them instead of the default list
+            if detected_modes:
+                capabilities.light_modes = sorted(list(detected_modes))
+                logger.info(f"Loaded {len(detected_modes)} detected light modes from YAML for spa {spa_id}")
+            
+        except Exception as e:
+            logger.debug(f"Could not load detected_modes from YAML: {e}")
 
     def _is_cache_expired(self, capabilities: SpaCapabilities) -> bool:
         """Check if cached capabilities have expired."""
@@ -399,5 +477,10 @@ class CapabilityDetector:
                     capabilities.chromazon_supported
                 ])
             },
+            "lights": {
+                "modes": capabilities.light_modes,
+                "colors": capabilities.light_colors,
+                "brightness_supported": capabilities.light_brightness_supported
+            } if capabilities.light_supported else None,
             "last_updated": capabilities.last_updated.isoformat()
         }

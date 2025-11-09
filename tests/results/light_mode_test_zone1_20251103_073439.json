@@ -1,0 +1,57 @@
+{
+  "device_id": "100946961",
+  "zone": 1,
+  "timestamp": "2025-11-03T07:34:39.001642",
+  "total_tests": 8,
+  "successful": 0,
+  "results": [
+    {
+      "mode": "OFF",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:10.963904"
+    },
+    {
+      "mode": "ON",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:14.968422"
+    },
+    {
+      "mode": "PURPLE",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:18.975707"
+    },
+    {
+      "mode": "ORANGE",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:22.978978"
+    },
+    {
+      "mode": "RED",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:26.985005"
+    },
+    {
+      "mode": "BLUE",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:30.990219"
+    },
+    {
+      "mode": "WHITE",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:34.996680"
+    },
+    {
+      "mode": "PARTY",
+      "success": false,
+      "error": "SpaLight.set_mode() missing 1 required positional argument: 'intensity'",
+      "timestamp": "2025-11-03T07:34:39.001531"
+    }
+  ]
+}

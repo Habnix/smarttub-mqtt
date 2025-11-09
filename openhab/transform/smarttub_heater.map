@@ -1,0 +1,5 @@
+// Heater State Mapping
+// Basierend auf echten Werten: off, on
+off=Aus
+on=Heizung läuft
+-=Unbekannt

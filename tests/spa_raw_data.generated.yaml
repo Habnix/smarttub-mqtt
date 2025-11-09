@@ -1,0 +1,42 @@
+discovered_items:
+  '12345':
+    capabilities_python-smarttub:
+      pump_states:
+      - 'OFF'
+      - LOW
+      - HIGH
+      pump_types:
+      - BLOWER
+      - CIRCULATION
+      - JET
+      light_modes:
+      - PURPLE
+      - ORANGE
+      - RED
+      - YELLOW
+      - GREEN
+      - AQUA
+      - BLUE
+      - WHITE
+      - AMBER
+      - HIGH_SPEED_COLOR_WHEEL
+      - HIGH_SPEED_WHEEL
+      - LOW_SPEED_WHEEL
+      - FULL_DYNAMIC_RGB
+      - AUTO_TIMER_EXTERIOR
+      - PARTY
+      - COLOR_WHEEL
+      - 'OFF'
+      - 'ON'
+      light_intensity:
+        min: 0
+        max: 100
+        example: 50
+    errors:
+    - 'status_full_error: ''DummySpa'' object has no attribute ''get_status_full'''
+    - 'debug_status_error: ''DummySpa'' object has no attribute ''get_debug_status'''
+    - 'energy_usage_error: ''DummySpa'' object has no attribute ''get_energy_usage'''
+    - 'errors_list_error: ''DummySpa'' object has no attribute ''get_errors'''
+    - 'reminders_error: ''DummySpa'' object has no attribute ''get_reminders'''
+    features:
+      clearray_available: false

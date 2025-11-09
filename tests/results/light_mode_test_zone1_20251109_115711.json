@@ -1,0 +1,21 @@
+{
+  "device_id": null,
+  "zone": 1,
+  "timestamp": "2025-11-09T11:57:11.411163",
+  "total_tests": 2,
+  "successful": 0,
+  "results": [
+    {
+      "mode": "OFF",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-09T11:57:05.660093"
+    },
+    {
+      "mode": "PURPLE",
+      "success": false,
+      "error": "'NoneType' object is not iterable",
+      "timestamp": "2025-11-09T11:57:11.411102"
+    }
+  ]
+}
