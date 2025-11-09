@@ -25,7 +25,8 @@ class WebApp:
         smarttub_client: SmartTubClient = None, 
         capability_detector: CapabilityDetector = None,
         error_tracker: Any = None,
-        progress_tracker: Any = None
+        progress_tracker: Any = None,
+        discovery_coordinator: Any = None
     ):
         self.config = config
         self.state_manager = state_manager
@@ -33,6 +34,7 @@ class WebApp:
         self.capability_detector = capability_detector
         self.error_tracker = error_tracker  # T058
         self.progress_tracker = progress_tracker  # T059
+        self.discovery_coordinator = discovery_coordinator  # Background Discovery
         self.app = FastAPI(
             title="SmartTub MQTT Bridge",
             description="Monitor and control SmartTub whirlpool via MQTT",
@@ -419,6 +421,133 @@ class WebApp:
                 "total": 1
             }
 
+        # Background Discovery API endpoints
+        @self.app.get("/api/discovery/status", response_model=Dict[str, Any])
+        async def get_background_discovery_status() -> Dict[str, Any]:
+            """Get current background discovery status."""
+            try:
+                if self.discovery_coordinator:
+                    status = await self.discovery_coordinator.get_status()
+                    return status
+                else:
+                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get discovery status: {str(e)}")
+
+        @self.app.post("/api/discovery/start")
+        async def start_background_discovery(request: Request) -> Dict[str, Any]:
+            """Start background discovery process."""
+            try:
+                if not self.discovery_coordinator:
+                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
+                
+                # Parse request body
+                body = await request.json()
+                mode = body.get("mode", "quick")
+                
+                # Validate mode
+                if mode not in ["full", "quick", "yaml_only"]:
+                    raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}")
+                
+                # Start discovery
+                result = await self.discovery_coordinator.start_discovery(mode=mode)
+                
+                if result["success"]:
+                    return {
+                        "success": True,
+                        "message": f"Discovery started in {mode} mode",
+                        "mode": mode
+                    }
+                else:
+                    raise HTTPException(status_code=400, detail=result.get("error", "Failed to start discovery"))
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to start discovery: {str(e)}")
+
+        @self.app.post("/api/discovery/stop")
+        async def stop_background_discovery() -> Dict[str, Any]:
+            """Stop running background discovery."""
+            try:
+                if not self.discovery_coordinator:
+                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
+                
+                result = await self.discovery_coordinator.stop_discovery()
+                
+                if result["success"]:
+                    return {
+                        "success": True,
+                        "message": "Discovery stopped"
+                    }
+                else:
+                    raise HTTPException(status_code=400, detail=result.get("error", "Failed to stop discovery"))
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to stop discovery: {str(e)}")
+
+        @self.app.get("/api/discovery/results", response_model=Dict[str, Any])
+        async def get_discovery_results() -> Dict[str, Any]:
+            """Get discovery results if available."""
+            try:
+                if not self.discovery_coordinator:
+                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
+                
+                result = await self.discovery_coordinator.get_results()
+                
+                if result["success"]:
+                    return result
+                else:
+                    raise HTTPException(status_code=404, detail=result.get("error", "No results available"))
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get results: {str(e)}")
+
+        @self.app.post("/api/discovery/reset")
+        async def reset_discovery_state() -> Dict[str, Any]:
+            """Reset discovery state to idle."""
+            try:
+                if not self.discovery_coordinator:
+                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
+                
+                result = await self.discovery_coordinator.reset_state()
+                
+                if result["success"]:
+                    return result
+                else:
+                    raise HTTPException(status_code=400, detail=result.get("error", "Failed to reset state"))
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to reset state: {str(e)}")
+
+        @self.app.get("/discovery", response_class=HTMLResponse)
+        async def discovery_page(request: Request) -> HTMLResponse:
+            """Render discovery page."""
+            try:
+                return self.templates.TemplateResponse(
+                    "discovery.html",
+                    {
+                        "request": request,
+                        "config": self.config
+                    }
+                )
+            except Exception as e:
+                return self.templates.TemplateResponse(
+                    "error.html",
+                    {
+                        "request": request,
+                        "error": str(e)
+                    }
+                )
+
         @self.app.get("/controls", response_class=HTMLResponse)
         async def controls(request: Request) -> HTMLResponse:
             """Render controls page."""
@@ -454,7 +583,8 @@ def create_app(
     smarttub_client: SmartTubClient = None, 
     capability_detector: CapabilityDetector = None,
     error_tracker: Any = None,
-    progress_tracker: Any = None
+    progress_tracker: Any = None,
+    discovery_coordinator: Any = None
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
     web_app = WebApp(
@@ -463,6 +593,7 @@ def create_app(
         smarttub_client, 
         capability_detector, 
         error_tracker,
-        progress_tracker
+        progress_tracker,
+        discovery_coordinator
     )
     return web_app.app

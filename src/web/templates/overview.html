@@ -38,12 +38,15 @@
 <body class="bg-light">
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="#">
+            <a class="navbar-brand" href="/">
                 <i class="fas fa-water me-2"></i>
                 SmartTub MQTT Bridge
             </a>
             <div class="navbar-nav ms-auto">
-                <span class="navbar-text me-3">
+                <a class="nav-link active" href="/">Overview</a>
+                <a class="nav-link" href="/controls">Controls</a>
+                <a class="nav-link" href="/discovery">Discovery</a>
+                <span class="navbar-text ms-3 me-3">
                     <small>
                         smarttub-mqtt: <strong>{{ versions.smarttub_mqtt }}</strong> | 
                         python-smarttub: <strong>{{ versions.python_smarttub }}</strong>
