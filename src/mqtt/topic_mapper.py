@@ -514,6 +514,81 @@ class MQTTTopicMapper:
             logger.debug(f"Error loading detected_modes from YAML for {spa_id}/{light_id}: {e}")
             return []
 
+    def publish_discovery_status(self, state: Any) -> List[MQTTMessage]:
+        """
+        Publish discovery status to MQTT.
+        
+        Topics:
+        - {base_topic}/discovery/status: Current discovery status (JSON)
+        
+        Args:
+            state: DiscoveryState object
+            
+        Returns:
+            List of MQTT messages to publish
+        """
+        messages = []
+        base_topic = self.config.mqtt.base_topic
+        
+        # Build status payload
+        status_data = {
+            "status": state.status.value,
+            "mode": state.mode.value if state.mode else None,
+            "started_at": state.started_at.isoformat() if state.started_at else None,
+            "completed_at": state.completed_at.isoformat() if state.completed_at else None,
+            "progress": {
+                "percentage": state.progress.percentage,
+                "current_spa": state.progress.current_spa,
+                "current_light": state.progress.current_light,
+                "lights_total": state.progress.lights_total,
+                "lights_tested": state.progress.lights_tested,
+                "modes_total": state.progress.modes_total,
+                "modes_tested": state.progress.modes_tested,
+            },
+            "error": state.error,
+        }
+        
+        # Status topic (not retained - current state)
+        topic_status = f"{base_topic}/discovery/status"
+        payload_status = json.dumps(status_data, indent=2)
+        messages.append(MQTTMessage(
+            topic=topic_status,
+            payload=payload_status,
+            qos=1,
+            retain=False  # Not retained - status changes frequently
+        ))
+        
+        # If completed, publish results (retained)
+        if state.status.value == "completed" and state.results:
+            result_data = {
+                "completed_at": state.completed_at.isoformat() if state.completed_at else None,
+                "yaml_path": state.results.yaml_path,
+                "total_lights": state.results.total_lights,
+                "total_modes_detected": state.results.total_modes_detected,
+                "spas": state.results.spas,
+            }
+            
+            topic_result = f"{base_topic}/discovery/result"
+            payload_result = json.dumps(result_data, indent=2)
+            messages.append(MQTTMessage(
+                topic=topic_result,
+                payload=payload_result,
+                qos=1,
+                retain=True  # Retained - last discovery result
+            ))
+        
+        logger.debug(f"Publishing discovery status: {state.status.value}")
+        return messages
+
+    def get_discovery_control_topic(self) -> str:
+        """
+        Get the MQTT topic for discovery control commands.
+        
+        Returns:
+            Control topic path
+        """
+        return f"{self.config.mqtt.base_topic}/discovery/control"
+
 
 # Convenience function for backward compatibility with tests
 def publish_state_snapshot(config: AppConfig, snapshot: dict[str, Any]) -> List[MQTTMessage]:
