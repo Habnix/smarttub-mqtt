@@ -22,6 +22,16 @@ services:
     
     environment:
       - PYTHONUNBUFFERED=1
+      
+      # Background Discovery (v0.3.0)
+      # Controls automatic discovery at startup
+      # Options: off (default), startup_quick, startup_full, startup_yaml
+      # - off: Manual discovery only via WebUI or MQTT
+      # - startup_quick: Quick discovery (~5 min) on startup
+      # - startup_full: Full discovery (~20 min) on startup
+      # - startup_yaml: Load saved results only (instant)
+      # Uncomment to enable:
+      # - DISCOVERY_MODE=startup_quick
     
     # Network configuration
     network_mode: bridge

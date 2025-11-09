@@ -73,6 +73,15 @@ services:
       CHECK_SMARTTUB: ${CHECK_SMARTTUB:-false}
       DISCOVERY_REFRESH_INTERVAL: ${DISCOVERY_REFRESH_INTERVAL:-86400}
       
+      # Background Discovery (v0.3.0)
+      # Controls automatic discovery at startup
+      # Options: off (default), startup_quick, startup_full, startup_yaml
+      # - off: Manual discovery only via WebUI or MQTT
+      # - startup_quick: Quick discovery (~5 min) on startup  
+      # - startup_full: Full discovery (~20 min) on startup
+      # - startup_yaml: Load saved results only (instant)
+      DISCOVERY_MODE: ${DISCOVERY_MODE:-off}
+      
       # Web UI Configuration
       WEB_ENABLED: ${WEB_ENABLED:-true}
       WEB_HOST: ${WEB_HOST:-0.0.0.0}
