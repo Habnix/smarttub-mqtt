@@ -192,6 +192,48 @@
             </div>
         </div>
 
+        <!-- Modes Overview Card -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            Light Modes Overview
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <h6 class="text-primary">
+                                    <i class="fas fa-vial me-2"></i>
+                                    Modes to Test
+                                </h6>
+                                <div id="modes-to-test-list" class="small">
+                                    <span class="text-muted">Select a discovery mode to see modes...</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <h6 class="text-success">
+                                    <i class="fas fa-check-circle me-2"></i>
+                                    Tested Modes
+                                </h6>
+                                <div id="tested-modes-list" class="small">
+                                    <span class="text-muted">No modes tested yet</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Available modes: OFF, ON, HIGH, PURPLE, ORANGE, BLUE_GREEN, RED, BLUE, GREEN, YELLOW, AQUA_GREEN, WHITE, ROTARY, BLUE_RED, RAINBOW, AMERICANA, FAT_TUESDAY, DISCO_TECH
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Results Card -->
         <div class="row mb-4" id="results-card" style="display: none;">
             <div class="col-12">
@@ -233,6 +275,40 @@
         let selectedMode = 'quick';
         let statusInterval = null;
 
+        // Mode configurations
+        const modeConfigs = {
+            'yaml_only': {
+                modes: [],
+                description: 'No modes tested'
+            },
+            'quick': {
+                modes: ['OFF', 'ON', 'PURPLE', 'WHITE'],
+                description: '4 modes (Quick Test)'
+            },
+            'full': {
+                modes: ['OFF', 'ON', 'HIGH', 'PURPLE', 'ORANGE', 'BLUE_GREEN', 'RED', 'BLUE', 'GREEN', 'YELLOW', 'AQUA_GREEN', 'WHITE', 'ROTARY', 'BLUE_RED', 'RAINBOW', 'AMERICANA', 'FAT_TUESDAY', 'DISCO_TECH'],
+                description: '18 modes (Full Test)'
+            }
+        };
+
+        // Update modes to test display
+        function updateModesToTestDisplay() {
+            const config = modeConfigs[selectedMode];
+            const container = document.getElementById('modes-to-test-list');
+            
+            if (config.modes.length === 0) {
+                container.innerHTML = '<span class="text-muted">No modes to test (YAML Only mode)</span>';
+            } else {
+                const badges = config.modes.map(mode => 
+                    `<span class="badge bg-primary me-1 mb-1">${mode}</span>`
+                ).join('');
+                container.innerHTML = `
+                    <div class="mb-2">${badges}</div>
+                    <small class="text-muted">${config.description}</small>
+                `;
+            }
+        }
+
         // Mode selection
         function selectMode(mode) {
             selectedMode = mode;
@@ -240,6 +316,7 @@
                 card.classList.remove('selected');
             });
             document.querySelector(`.mode-card[data-mode="${mode}"]`).classList.add('selected');
+            updateModesToTestDisplay();
         }
 
         // Start discovery
@@ -370,6 +447,9 @@
                 document.getElementById('error-section').style.display = 'none';
             }
             
+            // Update tested modes display
+            updateTestedModesDisplay(data);
+            
             // Buttons
             const isRunning = data.is_running;
             document.getElementById('start-btn').disabled = isRunning;
@@ -381,6 +461,60 @@
                 showResults(data.results);
             } else {
                 document.getElementById('results-card').style.display = 'none';
+            }
+        }
+
+        // Update tested modes display
+        function updateTestedModesDisplay(data) {
+            const container = document.getElementById('tested-modes-list');
+            const results = data.results;
+            
+            // If we have results, show detected modes
+            if (results && results.spas) {
+                const allDetectedModes = new Set();
+                const modeCounts = {};
+                
+                // Collect all detected modes from all lights
+                for (const spaData of Object.values(results.spas)) {
+                    const lights = spaData.lights || [];
+                    lights.forEach(light => {
+                        light.detected_modes.forEach(mode => {
+                            allDetectedModes.add(mode);
+                            modeCounts[mode] = (modeCounts[mode] || 0) + 1;
+                        });
+                    });
+                }
+                
+                if (allDetectedModes.size > 0) {
+                    // Show detected modes with success badge
+                    const badges = Array.from(allDetectedModes).sort().map(mode => {
+                        const count = modeCounts[mode];
+                        const totalLights = results.total_lights || 1;
+                        const icon = count === totalLights ? 
+                            '<i class="fas fa-check-circle me-1"></i>' : 
+                            '<i class="fas fa-exclamation-triangle me-1"></i>';
+                        return `<span class="badge bg-success me-1 mb-1" title="${count}/${totalLights} lights">${icon}${mode}</span>`;
+                    }).join('');
+                    
+                    container.innerHTML = `
+                        <div class="mb-2">${badges}</div>
+                        <small class="text-muted">${allDetectedModes.size} mode(s) detected across ${results.total_lights} light(s)</small>
+                    `;
+                } else {
+                    container.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>No modes detected</span>';
+                }
+            } else if (data.is_running) {
+                // Show in-progress indicator
+                const progress = data.progress || {};
+                container.innerHTML = `
+                    <div class="text-info">
+                        <i class="fas fa-spinner fa-spin me-2"></i>
+                        Testing in progress... (${progress.modes_tested || 0}/${progress.modes_total || 0})
+                    </div>
+                `;
+            } else {
+                // Not started yet
+                container.innerHTML = '<span class="text-muted">No modes tested yet</span>';
             }
         }
 
@@ -450,6 +584,7 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
+            updateModesToTestDisplay();  // Show initial modes for 'quick' (default)
             refreshStatus();
         });
     </script>
