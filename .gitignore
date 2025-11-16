@@ -68,6 +68,7 @@ htmlcov/
 
 # Logs
 *.log
+logs/
 
 # Configuration with secrets
 .env
