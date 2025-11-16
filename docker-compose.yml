@@ -1,8 +1,8 @@
 services:
   smarttub-mqtt:
-    # Use local build instead of Docker Hub image
-    build: .
-    # image: willnix/smarttub-mqtt:latest
+    # Use Docker Hub image (v0.3.1)
+    # build: .
+    image: willnix/smarttub-mqtt:latest
     container_name: smarttub-mqtt
     # Temporarily disabled to avoid rate limiting during testing
     # restart: unless-stopped

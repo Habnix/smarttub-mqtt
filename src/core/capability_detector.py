@@ -64,32 +64,32 @@ class SpaCapabilities:
                 "heater": {
                     "supported": self.heater_supported,
                     "temperature_range": self.heater_temperature_range,
-                    "modes": self.heater_modes
+                    "modes": self.heater_modes,
                 },
                 "pump": {
                     "supported": self.pump_supported,
                     "count": self.pump_count,
-                    "speeds": self.pump_speeds
+                    "speeds": self.pump_speeds,
                 },
                 "light": {
                     "supported": self.light_supported,
                     "colors": self.light_colors,
                     "modes": self.light_modes,
-                    "brightness_supported": self.light_brightness_supported
-                }
+                    "brightness_supported": self.light_brightness_supported,
+                },
             },
             "advanced_features": {
                 "uv": self.uv_supported,
                 "ozone": self.ozone_supported,
                 "nano": self.nano_supported,
-                "chromazon": self.chromazon_supported
+                "chromazon": self.chromazon_supported,
             },
             "water_care": {
                 "supported": self.water_care_supported,
                 "ph_monitoring": self.ph_monitoring,
                 "orp_monitoring": self.orp_monitoring,
-                "turbidity_monitoring": self.turbidity_monitoring
-            }
+                "turbidity_monitoring": self.turbidity_monitoring,
+            },
         }
 
     @classmethod
@@ -139,7 +139,12 @@ class SpaCapabilities:
 class CapabilityDetector:
     """Detects and caches SmartTub spa capabilities dynamically."""
 
-    def __init__(self, config: AppConfig, smarttub_client: SmartTubClient, topic_mapper: Optional[MQTTTopicMapper] = None):
+    def __init__(
+        self,
+        config: AppConfig,
+        smarttub_client: SmartTubClient,
+        topic_mapper: Optional[MQTTTopicMapper] = None,
+    ):
         self.config = config
         self.smarttub_client = smarttub_client
         self.topic_mapper = topic_mapper
@@ -147,7 +152,9 @@ class CapabilityDetector:
         self._cache_expiry_seconds = config.capability.cache_expiry_seconds
         self._refresh_interval_seconds = config.capability.refresh_interval_seconds
 
-    async def detect_capabilities(self, spa_id: str, force_refresh: bool = False) -> SpaCapabilities:
+    async def detect_capabilities(
+        self, spa_id: str, force_refresh: bool = False
+    ) -> SpaCapabilities:
         """Detect capabilities for a specific spa.
 
         Args:
@@ -178,8 +185,8 @@ class CapabilityDetector:
             capabilities = SpaCapabilities(spa_id)
 
             # Extract basic spa information
-            capabilities.model = getattr(spa_data, 'model', None)
-            capabilities.brand = getattr(spa_data, 'brand', None)
+            capabilities.model = getattr(spa_data, "model", None)
+            capabilities.brand = getattr(spa_data, "brand", None)
 
             # Get detailed status to detect capabilities
             status = await spa_data.get_status()
@@ -192,7 +199,7 @@ class CapabilityDetector:
 
             # Detect light capabilities
             await self._detect_light_capabilities(capabilities, spa_data)
-            
+
             # Load detected_modes from discovered_items.yaml if available
             await self._load_detected_modes_from_yaml(capabilities, spa_id)
 
@@ -214,9 +221,13 @@ class CapabilityDetector:
                 # Publish capability meta split into individual entries so consumers
                 # can subscribe to specific fields; keep compatibility for older
                 # callers by having topic_mapper also provide an aggregated message.
-                messages = self.topic_mapper.publish_capability_meta_entries(spa_id, capability_profile)
+                messages = self.topic_mapper.publish_capability_meta_entries(
+                    spa_id, capability_profile
+                )
                 # Also publish legacy aggregated message for backward compatibility
-                legacy = self.topic_mapper.publish_capability_meta(spa_id, capability_profile)
+                legacy = self.topic_mapper.publish_capability_meta(
+                    spa_id, capability_profile
+                )
                 messages.append(legacy)
                 self.topic_mapper.publish_messages(messages)
                 logger.debug(f"Published capability meta entries for spa {spa_id}")
@@ -232,11 +243,15 @@ class CapabilityDetector:
             self._capabilities_cache[spa_id] = minimal_caps
             return minimal_caps
 
-    async def _detect_heater_capabilities(self, capabilities: SpaCapabilities, status: Any) -> None:
+    async def _detect_heater_capabilities(
+        self, capabilities: SpaCapabilities, status: Any
+    ) -> None:
         """Detect heater-related capabilities."""
         try:
             # Check if heater exists and is functional
-            heater_present = getattr(status, 'heater1Present', 'PRESENT') != 'NOT_PRESENT'
+            heater_present = (
+                getattr(status, "heater1Present", "PRESENT") != "NOT_PRESENT"
+            )
 
             if heater_present:
                 capabilities.heater_supported = True
@@ -244,10 +259,16 @@ class CapabilityDetector:
                 # Try to detect temperature range (this might be model-specific)
                 # For now, use standard ranges based on model
                 if capabilities.model:
-                    if 'low' in capabilities.model.lower():
-                        capabilities.heater_temperature_range = {"min": 20.0, "max": 35.0}
+                    if "low" in capabilities.model.lower():
+                        capabilities.heater_temperature_range = {
+                            "min": 20.0,
+                            "max": 35.0,
+                        }
                     else:
-                        capabilities.heater_temperature_range = {"min": 20.0, "max": 40.0}
+                        capabilities.heater_temperature_range = {
+                            "min": 20.0,
+                            "max": 40.0,
+                        }
 
                 # Detect available heat modes
                 capabilities.heater_modes = ["AUTO", "ECONOMY", "DAY", "READY", "REST"]
@@ -255,7 +276,9 @@ class CapabilityDetector:
         except Exception as e:
             logger.debug(f"Could not detect heater capabilities: {e}")
 
-    async def _detect_pump_capabilities(self, capabilities: SpaCapabilities, spa_data: Any) -> None:
+    async def _detect_pump_capabilities(
+        self, capabilities: SpaCapabilities, spa_data: Any
+    ) -> None:
         """Detect pump-related capabilities."""
         try:
             # Try to get pumps
@@ -271,7 +294,9 @@ class CapabilityDetector:
         except Exception as e:
             logger.debug(f"Could not detect pump capabilities: {e}")
 
-    async def _detect_light_capabilities(self, capabilities: SpaCapabilities, spa_data: Any) -> None:
+    async def _detect_light_capabilities(
+        self, capabilities: SpaCapabilities, spa_data: Any
+    ) -> None:
         """Detect light-related capabilities."""
         try:
             # Try to get lights
@@ -286,14 +311,32 @@ class CapabilityDetector:
                 # Get all available light modes from python-smarttub
                 try:
                     import smarttub
-                    capabilities.light_modes = [mode.name for mode in smarttub.SpaLight.LightMode]
+
+                    capabilities.light_modes = [
+                        mode.name for mode in smarttub.SpaLight.LightMode
+                    ]
                 except Exception as e:
                     logger.debug(f"Could not get light modes from python-smarttub: {e}")
                     # Fallback to known modes
                     capabilities.light_modes = [
-                        "PURPLE", "ORANGE", "RED", "YELLOW", "GREEN", "AQUA", "BLUE", "WHITE",
-                        "AMBER", "HIGH_SPEED_COLOR_WHEEL", "HIGH_SPEED_WHEEL", "LOW_SPEED_WHEEL",
-                        "FULL_DYNAMIC_RGB", "AUTO_TIMER_EXTERIOR", "PARTY", "COLOR_WHEEL", "OFF", "ON"
+                        "PURPLE",
+                        "ORANGE",
+                        "RED",
+                        "YELLOW",
+                        "GREEN",
+                        "AQUA",
+                        "BLUE",
+                        "WHITE",
+                        "AMBER",
+                        "HIGH_SPEED_COLOR_WHEEL",
+                        "HIGH_SPEED_WHEEL",
+                        "LOW_SPEED_WHEEL",
+                        "FULL_DYNAMIC_RGB",
+                        "AUTO_TIMER_EXTERIOR",
+                        "PARTY",
+                        "COLOR_WHEEL",
+                        "OFF",
+                        "ON",
                     ]
 
                 # Assume brightness control is available
@@ -302,41 +345,51 @@ class CapabilityDetector:
         except Exception as e:
             logger.debug(f"Could not detect light capabilities: {e}")
 
-    async def _detect_advanced_features(self, capabilities: SpaCapabilities, status: Any) -> None:
+    async def _detect_advanced_features(
+        self, capabilities: SpaCapabilities, status: Any
+    ) -> None:
         """Detect advanced spa features."""
         try:
             # Check for UV system
-            capabilities.uv_supported = getattr(status, 'uv', 'OFF') != 'NOT_SUPPORTED'
+            capabilities.uv_supported = getattr(status, "uv", "OFF") != "NOT_SUPPORTED"
 
             # Check for ozone system
-            capabilities.ozone_supported = getattr(status, 'ozone', 'OFF') != 'NOT_SUPPORTED'
+            capabilities.ozone_supported = (
+                getattr(status, "ozone", "OFF") != "NOT_SUPPORTED"
+            )
 
             # Check for nano system (based on model or status)
-            nano_status = getattr(status, 'nanoStatus', 'OFF')
-            capabilities.nano_supported = nano_status != 'NOT_SUPPORTED'
+            nano_status = getattr(status, "nanoStatus", "OFF")
+            capabilities.nano_supported = nano_status != "NOT_SUPPORTED"
 
             # Check for Chromazon (based on model)
-            if capabilities.model and 'chromazon' in capabilities.model.lower():
+            if capabilities.model and "chromazon" in capabilities.model.lower():
                 capabilities.chromazon_supported = True
 
         except Exception as e:
             logger.debug(f"Could not detect advanced features: {e}")
 
-    async def _detect_water_care_capabilities(self, capabilities: SpaCapabilities, status: Any) -> None:
+    async def _detect_water_care_capabilities(
+        self, capabilities: SpaCapabilities, status: Any
+    ) -> None:
         """Detect water care and monitoring capabilities."""
         try:
             # Check water sensors
-            water = getattr(status, 'water', None)
+            water = getattr(status, "water", None)
 
             if water:
-                capabilities.ph_monitoring = getattr(water, 'ph', None) is not None
-                capabilities.orp_monitoring = getattr(water, 'oxidationReductionPotential', None) is not None
-                capabilities.turbidity_monitoring = getattr(water, 'turbidity', None) is not None
+                capabilities.ph_monitoring = getattr(water, "ph", None) is not None
+                capabilities.orp_monitoring = (
+                    getattr(water, "oxidationReductionPotential", None) is not None
+                )
+                capabilities.turbidity_monitoring = (
+                    getattr(water, "turbidity", None) is not None
+                )
 
                 capabilities.water_care_supported = (
-                    capabilities.ph_monitoring or
-                    capabilities.orp_monitoring or
-                    capabilities.turbidity_monitoring
+                    capabilities.ph_monitoring
+                    or capabilities.orp_monitoring
+                    or capabilities.turbidity_monitoring
                 )
             else:
                 capabilities.water_care_supported = False
@@ -351,9 +404,11 @@ class CapabilityDetector:
             capabilities.orp_monitoring = False
             capabilities.turbidity_monitoring = False
 
-    async def _load_detected_modes_from_yaml(self, capabilities: SpaCapabilities, spa_id: str) -> None:
+    async def _load_detected_modes_from_yaml(
+        self, capabilities: SpaCapabilities, spa_id: str
+    ) -> None:
         """Load detected_modes from discovered_items.yaml if available.
-        
+
         This reads the actual tested/detected modes from the YAML file
         and uses them instead of the default list of all possible modes.
         """
@@ -362,47 +417,49 @@ class CapabilityDetector:
             yaml_paths = [
                 Path("/config/discovered_items.yaml"),
                 Path("config/discovered_items.yaml"),
-                Path("discovered_items.yaml")
+                Path("discovered_items.yaml"),
             ]
-            
+
             yaml_path = None
             for path in yaml_paths:
                 if path.exists():
                     yaml_path = path
                     break
-            
+
             if not yaml_path:
                 logger.debug("discovered_items.yaml not found, using default modes")
                 return
-            
+
             # Load YAML file
-            with open(yaml_path, 'r') as f:
+            with open(yaml_path, "r") as f:
                 data = yaml.safe_load(f)
-            
-            if not data or 'discovered_items' not in data:
+
+            if not data or "discovered_items" not in data:
                 return
-            
+
             # Get spa data
-            spa_data = data['discovered_items'].get(spa_id)
+            spa_data = data["discovered_items"].get(spa_id)
             if not spa_data:
                 return
-            
+
             # Get lights data
-            lights = spa_data.get('lights', [])
+            lights = spa_data.get("lights", [])
             if not lights:
                 return
-            
+
             # Collect all detected modes from all light zones
             detected_modes = set()
             for light in lights:
-                modes = light.get('detected_modes', [])
+                modes = light.get("detected_modes", [])
                 detected_modes.update(modes)
-            
+
             # If we found detected modes, use them instead of the default list
             if detected_modes:
                 capabilities.light_modes = sorted(list(detected_modes))
-                logger.info(f"Loaded {len(detected_modes)} detected light modes from YAML for spa {spa_id}")
-            
+                logger.info(
+                    f"Loaded {len(detected_modes)} detected light modes from YAML for spa {spa_id}"
+                )
+
         except Exception as e:
             logger.debug(f"Could not load detected_modes from YAML: {e}")
 
@@ -441,16 +498,20 @@ class CapabilityDetector:
         for spa_id in list(self._capabilities_cache.keys()):
             try:
                 await self.detect_capabilities(spa_id, force_refresh=True)
-                
+
                 # Publish capability meta to MQTT if topic_mapper is available
                 if self.topic_mapper:
                     capability_profile = self.get_capability_profile(spa_id)
-                    messages = self.topic_mapper.publish_capability_meta_entries(spa_id, capability_profile)
-                    legacy = self.topic_mapper.publish_capability_meta(spa_id, capability_profile)
+                    messages = self.topic_mapper.publish_capability_meta_entries(
+                        spa_id, capability_profile
+                    )
+                    legacy = self.topic_mapper.publish_capability_meta(
+                        spa_id, capability_profile
+                    )
                     messages.append(legacy)
                     self.topic_mapper.publish_messages(messages)
                     logger.debug(f"Published capability meta entries for spa {spa_id}")
-                    
+
             except Exception as e:
                 logger.error(f"Failed to refresh capabilities for spa {spa_id}: {e}")
 
@@ -470,17 +531,21 @@ class CapabilityDetector:
                 "pump": capabilities.pump_supported,
                 "light": capabilities.light_supported,
                 "water_care": capabilities.water_care_supported,
-                "advanced": any([
-                    capabilities.uv_supported,
-                    capabilities.ozone_supported,
-                    capabilities.nano_supported,
-                    capabilities.chromazon_supported
-                ])
+                "advanced": any(
+                    [
+                        capabilities.uv_supported,
+                        capabilities.ozone_supported,
+                        capabilities.nano_supported,
+                        capabilities.chromazon_supported,
+                    ]
+                ),
             },
             "lights": {
                 "modes": capabilities.light_modes,
                 "colors": capabilities.light_colors,
-                "brightness_supported": capabilities.light_brightness_supported
-            } if capabilities.light_supported else None,
-            "last_updated": capabilities.last_updated.isoformat()
+                "brightness_supported": capabilities.light_brightness_supported,
+            }
+            if capabilities.light_supported
+            else None,
+            "last_updated": capabilities.last_updated.isoformat(),
         }

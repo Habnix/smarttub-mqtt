@@ -38,8 +38,13 @@ class CommandAuditLogger:
         self.audit_topic = f"{base_topic}/meta/commands"
         self._enabled = config.logging.mqtt_forwarding
 
-    def log_command_attempt(self, command_id: str, command_type: str,
-                          command_params: dict[str, Any], user_id: str = "system") -> None:
+    def log_command_attempt(
+        self,
+        command_id: str,
+        command_type: str,
+        command_params: dict[str, Any],
+        user_id: str = "system",
+    ) -> None:
         """Log a command attempt.
 
         Args:
@@ -54,12 +59,15 @@ class CommandAuditLogger:
             "command_type": command_type,
             "command_params": command_params,
             "user_id": user_id,
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(None, None, {})["timestamp"]
+            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
+                None, None, {}
+            )["timestamp"],
         }
         self._log_audit_event(event)
 
-    def log_command_success(self, command_id: str, command_type: str,
-                          result: dict[str, Any] = None) -> None:
+    def log_command_success(
+        self, command_id: str, command_type: str, result: dict[str, Any] = None
+    ) -> None:
         """Log a successful command execution.
 
         Args:
@@ -72,12 +80,19 @@ class CommandAuditLogger:
             "command_id": command_id,
             "command_type": command_type,
             "result": result or {},
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(None, None, {})["timestamp"]
+            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
+                None, None, {}
+            )["timestamp"],
         }
         self._log_audit_event(event)
 
-    def log_command_failure(self, command_id: str, command_type: str,
-                          error: str, error_details: dict[str, Any] = None) -> None:
+    def log_command_failure(
+        self,
+        command_id: str,
+        command_type: str,
+        error: str,
+        error_details: dict[str, Any] = None,
+    ) -> None:
         """Log a failed command execution.
 
         Args:
@@ -92,12 +107,15 @@ class CommandAuditLogger:
             "command_type": command_type,
             "error": error,
             "error_details": error_details or {},
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(None, None, {})["timestamp"]
+            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
+                None, None, {}
+            )["timestamp"],
         }
         self._log_audit_event(event)
 
-    def log_command_timeout(self, command_id: str, command_type: str,
-                          timeout_seconds: int) -> None:
+    def log_command_timeout(
+        self, command_id: str, command_type: str, timeout_seconds: int
+    ) -> None:
         """Log a command timeout.
 
         Args:
@@ -110,7 +128,9 @@ class CommandAuditLogger:
             "command_id": command_id,
             "command_type": command_type,
             "timeout_seconds": timeout_seconds,
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(None, None, {})["timestamp"]
+            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
+                None, None, {}
+            )["timestamp"],
         }
         self._log_audit_event(event)
 
@@ -129,7 +149,9 @@ class CommandAuditLogger:
             try:
                 payload = json.dumps(event, default=str)
                 self.mqtt_client.publish(self.audit_topic, payload, qos=1, retain=False)
-            except Exception as e:  # pragma: no cover - forwarding should not break operations
+            except (
+                Exception
+            ) as e:  # pragma: no cover - forwarding should not break operations
                 logger.warning("Failed to forward command audit to MQTT", error=str(e))
 
 
@@ -141,7 +163,9 @@ def _resolve_log_level(level: str | None) -> int:
 
 def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     base_topic = (config.mqtt.base_topic or "smarttub-mqtt").rstrip("/")
-    forwarder = _MQTTForwarder(config.logging.mqtt_forwarding, mqtt_client, f"{base_topic}/meta/logs")
+    forwarder = _MQTTForwarder(
+        config.logging.mqtt_forwarding, mqtt_client, f"{base_topic}/meta/logs"
+    )
 
     min_level = _resolve_log_level(config.logging.level)
 
@@ -174,11 +198,11 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     # Configure standard logging to also write to files
     root_logger = logging.getLogger()
     root_logger.setLevel(min_level)
-    
+
     # Remove existing handlers to avoid duplicates
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-    
+
     # Add console handler to root (all logs to console)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(min_level)
@@ -187,10 +211,10 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     )
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
-    
+
     # Add default smarttub.log to root for catchall
     root_logger.addHandler(file_handlers["smarttub"])
-    
+
     # Set up logger routing for specific modules with propagate=False to avoid duplicates
     # MQTT logs go ONLY to mqtt.log
     mqtt_logger = logging.getLogger("smarttub.mqtt")
@@ -198,28 +222,28 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     mqtt_logger.propagate = False  # Don't propagate to root/parent
     mqtt_logger.addHandler(file_handlers["mqtt"])
     mqtt_logger.addHandler(console_handler)
-    
-    # WebUI logs go ONLY to webui.log  
+
+    # WebUI logs go ONLY to webui.log
     webui_logger = logging.getLogger("smarttub.webui")
     webui_logger.setLevel(min_level)
     webui_logger.propagate = False
     webui_logger.addHandler(file_handlers["webui"])
     webui_logger.addHandler(console_handler)
-    
+
     # SmartTub API logs go ONLY to smarttub.log
     api_logger = logging.getLogger("smarttub.api")
     api_logger.setLevel(min_level)
     api_logger.propagate = False
     api_logger.addHandler(file_handlers["smarttub"])
     api_logger.addHandler(console_handler)
-    
+
     # Core logs go ONLY to smarttub.log
     core_logger = logging.getLogger("smarttub.core")
     core_logger.setLevel(min_level)
     core_logger.propagate = False
     core_logger.addHandler(file_handlers["smarttub"])
     core_logger.addHandler(console_handler)
-    
+
     # Uvicorn loggers go ONLY to webui.log
     # Uvicorn uses its own loggers: uvicorn, uvicorn.access, uvicorn.error
     uvicorn_logger = logging.getLogger("uvicorn")
@@ -227,13 +251,13 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     uvicorn_logger.propagate = False
     uvicorn_logger.addHandler(file_handlers["webui"])
     uvicorn_logger.addHandler(console_handler)
-    
+
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
     uvicorn_access_logger.setLevel(min_level)
     uvicorn_access_logger.propagate = False
     uvicorn_access_logger.addHandler(file_handlers["webui"])
     uvicorn_access_logger.addHandler(console_handler)
-    
+
     uvicorn_error_logger = logging.getLogger("uvicorn.error")
     uvicorn_error_logger.setLevel(min_level)
     uvicorn_error_logger.propagate = False

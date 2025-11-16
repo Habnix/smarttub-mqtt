@@ -19,7 +19,9 @@ class StateManager:
         self.topic_mapper = topic_mapper
         self._last_snapshot: Optional[Dict[str, Any]] = None
         self._lock = threading.Lock()
-        self._pending_commands: Dict[str, Dict[str, Any]] = {}  # Track pending commands for reconciliation
+        self._pending_commands: Dict[
+            str, Dict[str, Any]
+        ] = {}  # Track pending commands for reconciliation
 
     async def sync_state(self) -> None:
         """Synchronize current state to MQTT."""
@@ -34,7 +36,9 @@ class StateManager:
             self.topic_mapper.publish_messages(messages)
 
             self._last_snapshot = snapshot
-            logger.debug(f"Published {len(messages)} state messages to MQTT (full publish per poll)")
+            logger.debug(
+                f"Published {len(messages)} state messages to MQTT (full publish per poll)"
+            )
 
         except Exception as e:
             logger.error(f"State sync failed: {e}")
@@ -59,7 +63,9 @@ class StateManager:
         changes = self._detect_changes(self._last_snapshot, snapshot)
         return len(changes) > 0
 
-    def _detect_changes(self, old_snapshot: Dict[str, Any], new_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    def _detect_changes(
+        self, old_snapshot: Dict[str, Any], new_snapshot: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Detect changes between two snapshots.
 
         Returns:
@@ -78,7 +84,12 @@ class StateManager:
             # if the new data is empty or None but we previously had non-empty data,
             # treat that as NO change (likely a transient API/timeout). This prevents
             # overwriting a known-good list with a transient empty list.
-            if isinstance(new_data, list) and (not new_data) and isinstance(old_data, list) and old_data:
+            if (
+                isinstance(new_data, list)
+                and (not new_data)
+                and isinstance(old_data, list)
+                and old_data
+            ):
                 # skip — keep the old list
                 continue
 
@@ -99,11 +110,13 @@ class StateManager:
                 "heater": {"state": "off"},
                 "pump": {"state": "off"},
                 "light": {"state": "off"},
-                "spa": {"state": "unknown"}
-            }
+                "spa": {"state": "unknown"},
+            },
         }
 
-    def _aggregate_spa_states(self, spa_states: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    def _aggregate_spa_states(
+        self, spa_states: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
         """Aggregate states from multiple spas.
 
         Args:
@@ -160,8 +173,12 @@ class StateManager:
             logger.error(f"Error recovery failed: {e}")
             return False
 
-    async def reconcile_command_result(self, command_type: str, command_params: Dict[str, Any],
-                                     expected_result: Dict[str, Any]) -> bool:
+    async def reconcile_command_result(
+        self,
+        command_type: str,
+        command_params: Dict[str, Any],
+        expected_result: Dict[str, Any],
+    ) -> bool:
         """Reconcile command execution results with current state.
 
         Args:
@@ -177,15 +194,21 @@ class StateManager:
             current_snapshot = await self.smarttub_client.get_state_snapshot()
 
             # Verify the command was successful
-            if self._verify_command_success(command_type, command_params, current_snapshot):
+            if self._verify_command_success(
+                command_type, command_params, current_snapshot
+            ):
                 logger.info(f"Command {command_type} successfully reconciled")
                 # Update our last snapshot to reflect the change
                 with self._lock:
                     self._last_snapshot = current_snapshot
                 return True
             else:
-                logger.warning(f"Command {command_type} failed verification, triggering fallback")
-                await self._trigger_safe_fallback(command_type, "command_verification_failed")
+                logger.warning(
+                    f"Command {command_type} failed verification, triggering fallback"
+                )
+                await self._trigger_safe_fallback(
+                    command_type, "command_verification_failed"
+                )
                 return False
 
         except Exception as e:
@@ -193,8 +216,12 @@ class StateManager:
             await self._trigger_safe_fallback(command_type, "reconciliation_error")
             return False
 
-    def _verify_command_success(self, command_type: str, command_params: Dict[str, Any],
-                               actual_snapshot: Dict[str, Any]) -> bool:
+    def _verify_command_success(
+        self,
+        command_type: str,
+        command_params: Dict[str, Any],
+        actual_snapshot: Dict[str, Any],
+    ) -> bool:
         """Verify that a command was successfully executed by checking state changes.
 
         Args:
@@ -221,10 +248,17 @@ class StateManager:
             # For now, just check that we got a valid response
             return target_mode is not None
 
-        elif command_type in ["set_pump_state", "set_light_state", "set_light_color", "set_light_brightness"]:
+        elif command_type in [
+            "set_pump_state",
+            "set_light_state",
+            "set_light_color",
+            "set_light_brightness",
+        ]:
             # Command considered successful if no error occurred
             # The SmartTub API provides limited feedback for these operations
-            logger.debug(f"Command {command_type} assumed successful (limited API feedback)")
+            logger.debug(
+                f"Command {command_type} assumed successful (limited API feedback)"
+            )
             return True
 
         else:
@@ -239,7 +273,9 @@ class StateManager:
             reason: Reason for the fallback
         """
         try:
-            logger.warning(f"Triggering safe fallback for {component_name} due to: {reason}")
+            logger.warning(
+                f"Triggering safe fallback for {component_name} due to: {reason}"
+            )
 
             # Get current safe fallback state
             fallback_snapshot = self.get_safe_fallback_state()
@@ -257,8 +293,9 @@ class StateManager:
         except Exception as e:
             logger.error(f"Failed to trigger safe fallback for {component_name}: {e}")
 
-    def register_pending_command(self, command_id: str, command_type: str,
-                               command_params: Dict[str, Any]) -> None:
+    def register_pending_command(
+        self, command_id: str, command_type: str, command_params: Dict[str, Any]
+    ) -> None:
         """Register a pending command for later reconciliation.
 
         Args:
@@ -270,7 +307,7 @@ class StateManager:
             self._pending_commands[command_id] = {
                 "type": command_type,
                 "params": command_params,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
     def remove_pending_command(self, command_id: str) -> None:

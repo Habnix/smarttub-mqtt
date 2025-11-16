@@ -17,14 +17,14 @@ from logging.handlers import RotatingFileHandler as StdRotatingFileHandler
 
 class ZipRotatingFileHandler(StdRotatingFileHandler):
     """Rotating file handler that compresses rotated logs to ZIP and keeps only one ZIP per log type.
-    
+
     When a log file reaches maxBytes:
     1. Close the current log file
     2. Delete any existing .zip for this log type
     3. Create a new .zip containing the rotated log
     4. Delete the rotated log file
     5. Start fresh log file
-    
+
     This ensures only ONE .zip exists per log type at any time.
     """
 
@@ -39,7 +39,7 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
         compress: bool = True,
     ) -> None:
         """Initialize the ZIP rotating file handler.
-        
+
         Args:
             filename: Path to the log file
             mode: File mode (default 'a' for append)
@@ -50,7 +50,9 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
             compress: Whether to compress rotated logs (default True)
         """
         # Force backupCount to 1 since we only keep one ZIP
-        super().__init__(filename, mode, maxBytes, backupCount=1, encoding=encoding, delay=delay)
+        super().__init__(
+            filename, mode, maxBytes, backupCount=1, encoding=encoding, delay=delay
+        )
         self.compress = compress
         self._log_path = Path(filename)
 
@@ -83,7 +85,7 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
                 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                     # Add the rotated log with original name inside ZIP
                     zf.write(rotated_log, arcname=self._log_path.name)
-                
+
                 # Delete the rotated log file after successful ZIP
                 rotated_log.unlink()
             except Exception as e:
@@ -103,19 +105,19 @@ def setup_file_logging(
     log_level: int = logging.INFO,
 ) -> dict[str, ZipRotatingFileHandler]:
     """Set up file logging with rotation and ZIP compression for all log types.
-    
+
     Creates three separate log files:
     - mqtt.log: MQTT broker and connection logs
     - webui.log: Web UI and REST API logs
     - smarttub.log: SmartTub API and core logic logs
-    
+
     Args:
         log_dir: Directory for log files
         log_max_size_mb: Maximum size per log file in MB
         log_max_files: Ignored (we always keep 1 ZIP per type)
         log_compress: Whether to compress rotated logs
         log_level: Minimum log level
-        
+
     Returns:
         Dictionary mapping log type to handler instance
     """
@@ -137,14 +139,14 @@ def setup_file_logging(
             compress=log_compress,
         )
         handler.setLevel(log_level)
-        
+
         # Use simple formatter for file logs
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
-        
+
         handlers[log_type] = handler
 
     return handlers

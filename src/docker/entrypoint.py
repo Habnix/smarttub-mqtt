@@ -21,62 +21,65 @@ from typing import NoReturn
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("smarttub.core")
 
 
 class EntrypointError(Exception):
     """Fatal error during container initialization."""
+
     pass
 
 
 def validate_environment() -> dict[str, str]:
     """
     Validate required environment variables.
-    
+
     Returns:
         Dictionary of validated environment variables
-        
+
     Raises:
         EntrypointError: If required variables are missing or invalid
     """
     logger.info("Validating environment variables...")
-    
+
     required_vars = {
         "SMARTTUB_EMAIL": os.getenv("SMARTTUB_EMAIL"),
         "MQTT_BROKER_URL": os.getenv("MQTT_BROKER_URL"),
     }
-    
+
     # Check for password OR token
     password = os.getenv("SMARTTUB_PASSWORD")
     token = os.getenv("SMARTTUB_TOKEN")
-    
+
     if not password and not token:
-        raise EntrypointError(
-            "Either SMARTTUB_PASSWORD or SMARTTUB_TOKEN must be set"
-        )
-    
+        raise EntrypointError("Either SMARTTUB_PASSWORD or SMARTTUB_TOKEN must be set")
+
     # Check required variables
     missing = [k for k, v in required_vars.items() if not v]
     if missing:
         raise EntrypointError(
             f"Missing required environment variables: {', '.join(missing)}"
         )
-    
+
     # Validate paths
     config_path = os.getenv("CONFIG_PATH") or os.getenv("CONFIG_FILE")
-    log_dir = os.getenv("LOG_DIR", "/logs")  # Changed from /log to /logs to match docker-compose.yml
-    
+    log_dir = os.getenv(
+        "LOG_DIR", "/logs"
+    )  # Changed from /log to /logs to match docker-compose.yml
+
     logger.info(f"  ✓ SMARTTUB_EMAIL: {required_vars['SMARTTUB_EMAIL']}")
-    logger.info(f"  ✓ SMARTTUB_PASSWORD/TOKEN: {'***' if password or token else 'NOT SET'}")
+    logger.info(
+        f"  ✓ SMARTTUB_PASSWORD/TOKEN: {'***' if password or token else 'NOT SET'}"
+    )
     logger.info(f"  ✓ MQTT_BROKER_URL: {required_vars['MQTT_BROKER_URL']}")
     if config_path:
         logger.info(f"  ✓ CONFIG_PATH: {config_path}")
     else:
         logger.info("  ℹ No YAML config - using .env only")
     logger.info(f"  ✓ LOG_DIR: {log_dir}")
-    
+
     return {
         **required_vars,
         "SMARTTUB_PASSWORD": password,
@@ -89,15 +92,15 @@ def validate_environment() -> dict[str, str]:
 def validate_directories(env: dict[str, str]) -> None:
     """
     Validate and create required directories.
-    
+
     Args:
         env: Environment variables dictionary
-        
+
     Raises:
         EntrypointError: If directories cannot be created or accessed
     """
     logger.info("Validating directories...")
-    
+
     # Check log directory
     log_dir = Path(env["LOG_DIR"])
     try:
@@ -109,7 +112,7 @@ def validate_directories(env: dict[str, str]) -> None:
         logger.info(f"  ✓ Log directory writable: {log_dir}")
     except Exception as e:
         raise EntrypointError(f"Cannot write to log directory {log_dir}: {e}")
-    
+
     # Check config directory
     config_path_str = env.get("CONFIG_PATH")
     if config_path_str:
@@ -120,7 +123,7 @@ def validate_directories(env: dict[str, str]) -> None:
             logger.info(f"  ✓ Config directory exists: {config_dir}")
         except Exception as e:
             raise EntrypointError(f"Cannot create config directory {config_dir}: {e}")
-        
+
         # Check if config file exists (create minimal if not found)
         if config_path.exists():
             logger.info(f"  ✓ Config file found: {config_path}")
@@ -146,32 +149,34 @@ logging:
                 config_path.write_text(minimal_config, encoding="utf-8")
                 logger.info(f"  ✓ Created minimal config file: {config_path}")
             except Exception as e:
-                logger.warning(f"  ⚠ Could not create config file: {e} (will try to continue)")
+                logger.warning(
+                    f"  ⚠ Could not create config file: {e} (will try to continue)"
+                )
     else:
         logger.info("  ℹ No YAML config file - using .env only")
 
 
 def setup_signal_handlers() -> None:
     """Setup graceful shutdown handlers for SIGTERM and SIGINT."""
-    
+
     def shutdown_handler(signum: int, frame) -> NoReturn:
         """Handle shutdown signals gracefully."""
         sig_name = signal.Signals(signum).name
         logger.info(f"Received {sig_name}, initiating graceful shutdown...")
-        
+
         # Exit cleanly - main app will handle cleanup
         sys.exit(0)
-    
+
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
-    
+
     logger.info("Signal handlers configured (SIGTERM, SIGINT)")
 
 
 def check_discovery_mode() -> bool:
     """
     Check if discovery mode is enabled.
-    
+
     Returns:
         True if CHECK_SMARTTUB=true, False otherwise
     """
@@ -182,47 +187,49 @@ def check_discovery_mode() -> bool:
 def main() -> NoReturn:
     """
     Docker entrypoint main function.
-    
+
     Performs initialization and starts the main application.
     """
     # Import version info early
     from src.core.version import get_version_info
-    
+
     version_info = get_version_info()
-    
+
     logger.info("=" * 60)
     logger.info("SmartTub-MQTT Container Starting")
-    logger.info(f"Version: smarttub-mqtt {version_info['smarttub_mqtt']} | python-smarttub {version_info['python_smarttub']}")
+    logger.info(
+        f"Version: smarttub-mqtt {version_info['smarttub_mqtt']} | python-smarttub {version_info['python_smarttub']}"
+    )
     logger.info("=" * 60)
-    
+
     try:
         # Step 1: Validate environment
         env = validate_environment()
-        
+
         # Step 2: Validate directories
         validate_directories(env)
-        
+
         # Step 3: Setup signal handlers
         setup_signal_handlers()
-        
+
         # Step 4: Check discovery mode
         discovery_mode = check_discovery_mode()
         if discovery_mode:
             logger.info("Discovery mode enabled (CHECK_SMARTTUB=true)")
         else:
             logger.info("Normal operation mode (CHECK_SMARTTUB=false)")
-        
+
         logger.info("=" * 60)
         logger.info("Initialization complete, starting main application...")
         logger.info("=" * 60)
-        
+
         # Import and run main application
         # (Import here to avoid circular dependencies and allow early validation)
         from src.cli.run import main as app_main
-        
+
         # Execute main application
         sys.exit(app_main())
-        
+
     except EntrypointError as e:
         logger.error(f"Entrypoint validation failed: {e}")
         sys.exit(1)

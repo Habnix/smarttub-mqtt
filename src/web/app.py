@@ -24,14 +24,14 @@ class WebApp:
     """Web application for SmartTub monitoring and control."""
 
     def __init__(
-        self, 
-        config: AppConfig, 
-        state_manager: StateManager, 
-        smarttub_client: SmartTubClient = None, 
+        self,
+        config: AppConfig,
+        state_manager: StateManager,
+        smarttub_client: SmartTubClient = None,
         capability_detector: CapabilityDetector = None,
         error_tracker: Any = None,
         progress_tracker: Any = None,
-        discovery_coordinator: Any = None
+        discovery_coordinator: Any = None,
     ):
         self.config = config
         self.state_manager = state_manager
@@ -43,7 +43,7 @@ class WebApp:
         self.app = FastAPI(
             title="SmartTub MQTT Bridge",
             description="Monitor and control SmartTub whirlpool via MQTT",
-            version="1.0.0"
+            version="1.0.0",
         )
 
         # Add Basic Auth middleware if enabled (T056)
@@ -51,17 +51,20 @@ class WebApp:
             if config.web.basic_auth_username and config.web.basic_auth_password:
                 auth_middleware = BasicAuthMiddleware(
                     username=config.web.basic_auth_username,
-                    password=config.web.basic_auth_password
+                    password=config.web.basic_auth_password,
                 )
                 self.app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 
         # Mount static files (only if directory exists and has content)
         import os
+
         static_dir = "src/web/static"
         if os.path.exists(static_dir) and os.path.isdir(static_dir):
             # Check if directory has any files
             if any(os.scandir(static_dir)):
-                self.app.mount("/static", StaticFiles(directory=static_dir), name="static")
+                self.app.mount(
+                    "/static", StaticFiles(directory=static_dir), name="static"
+                )
 
         # Setup templates
         self.templates = Jinja2Templates(directory="src/web/templates")
@@ -84,7 +87,9 @@ class WebApp:
 
                 return snapshot
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get state: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get state: {str(e)}"
+                )
 
         @self.app.get("/api/capabilities", response_model=Dict[str, Any])
         async def get_capabilities() -> Dict[str, Any]:
@@ -93,8 +98,12 @@ class WebApp:
                 if self.capability_detector:
                     # Get all known spas and their capabilities
                     spas_capabilities = {}
-                    for spa_id in list(self.capability_detector._capabilities_cache.keys()):
-                        capability_profile = self.capability_detector.get_capability_profile(spa_id)
+                    for spa_id in list(
+                        self.capability_detector._capabilities_cache.keys()
+                    ):
+                        capability_profile = (
+                            self.capability_detector.get_capability_profile(spa_id)
+                        )
                         spas_capabilities[spa_id] = capability_profile
 
                     return {
@@ -105,8 +114,8 @@ class WebApp:
                             "capability_meta_topics": [
                                 f"{self.config.mqtt.base_topic}/spa/{{spa_id}}/capability/meta"
                                 for spa_id in spas_capabilities.keys()
-                            ]
-                        }
+                            ],
+                        },
                     }
                 else:
                     # Fallback to static capabilities if detector not available
@@ -115,12 +124,14 @@ class WebApp:
                         "spas": {},
                         "mqtt_topics": {
                             "base_topic": self.config.mqtt.base_topic,
-                            "capability_meta_topics": []
+                            "capability_meta_topics": [],
                         },
-                        "note": "Capability detector not available - showing static capabilities"
+                        "note": "Capability detector not available - showing static capabilities",
                     }
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get capabilities: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get capabilities: {str(e)}"
+                )
 
         @self.app.get("/", response_class=HTMLResponse)
         async def overview(request: Request) -> HTMLResponse:
@@ -128,8 +139,9 @@ class WebApp:
             try:
                 # Get version information
                 from src.core.version import get_version_info
+
                 version_info = get_version_info()
-                
+
                 # Get current state for template
                 current_state = self.state_manager._last_snapshot
                 if current_state is None:
@@ -138,20 +150,25 @@ class WebApp:
                 # Get capabilities for template
                 capabilities = {}
                 if self.capability_detector:
-                    for spa_id in list(self.capability_detector._capabilities_cache.keys()):
-                        capabilities[spa_id] = self.capability_detector.get_capability_profile(spa_id)
+                    for spa_id in list(
+                        self.capability_detector._capabilities_cache.keys()
+                    ):
+                        capabilities[spa_id] = (
+                            self.capability_detector.get_capability_profile(spa_id)
+                        )
 
                 # Load discovered items from YAML
                 discovered_items = {}
                 try:
                     from pathlib import Path
                     import yaml
+
                     yaml_path = Path(self.config.config_dir) / "discovered_items.yaml"
                     if yaml_path.exists():
-                        with open(yaml_path, 'r') as f:
+                        with open(yaml_path, "r") as f:
                             data = yaml.safe_load(f)
-                            if data and 'discovered_items' in data:
-                                discovered_items = data['discovered_items']
+                            if data and "discovered_items" in data:
+                                discovered_items = data["discovered_items"]
                 except Exception as e:
                     logger.warning(f"Could not load discovered_items.yaml: {e}")
 
@@ -164,23 +181,22 @@ class WebApp:
                         "discovered_items": discovered_items,
                         "config": self.config,
                         "versions": version_info,
-                        "last_updated": datetime.now(timezone.utc).isoformat()
-                    }
+                        "last_updated": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
             except Exception as e:
                 # Fallback to error page
                 return self.templates.TemplateResponse(
-                    "error.html",
-                    {
-                        "request": request,
-                        "error": str(e)
-                    }
+                    "error.html", {"request": request, "error": str(e)}
                 )
 
         @self.app.get("/health")
         async def health_check() -> Dict[str, str]:
             """Health check endpoint."""
-            return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+            return {
+                "status": "healthy",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
         @self.app.get("/api/errors", response_model=Dict[str, Any])
         async def get_errors() -> Dict[str, Any]:
@@ -189,51 +205,68 @@ class WebApp:
                 if self.error_tracker:
                     summary = self.error_tracker.get_error_summary()
                     subsystems = self.error_tracker.get_subsystem_status()
-                    
+
                     return {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "summary": summary,
-                        "subsystems": subsystems
+                        "subsystems": subsystems,
                     }
                 else:
                     return {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "summary": {"total_errors": 0, "critical_count": 0, "error_count": 0},
+                        "summary": {
+                            "total_errors": 0,
+                            "critical_count": 0,
+                            "error_count": 0,
+                        },
                         "subsystems": {},
-                        "error_tracker_available": False
+                        "error_tracker_available": False,
                     }
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get errors: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get errors: {str(e)}"
+                )
 
         @self.app.post("/api/errors/clear")
         async def clear_errors(request: Request) -> Dict[str, Any]:
             """Clear tracked errors (T058)."""
             try:
-                data = await request.json() if request.headers.get("content-type") == "application/json" else {}
+                data = (
+                    await request.json()
+                    if request.headers.get("content-type") == "application/json"
+                    else {}
+                )
                 category = data.get("category")
-                
+
                 if self.error_tracker:
                     # Import ErrorCategory if available
                     try:
                         from src.core.error_tracker import ErrorCategory
-                        cat_filter = ErrorCategory[category.upper()] if category else None
+
+                        cat_filter = (
+                            ErrorCategory[category.upper()] if category else None
+                        )
                     except (ImportError, KeyError, AttributeError):
                         cat_filter = None
-                    
+
                     cleared = self.error_tracker.clear_errors(cat_filter)
-                    
+
                     return {
                         "status": "success",
                         "cleared_count": cleared,
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="Error tracker not available")
-            
+                    raise HTTPException(
+                        status_code=503, detail="Error tracker not available"
+                    )
+
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to clear errors: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to clear errors: {str(e)}"
+                )
 
         @self.app.get("/api/discovery/progress", response_model=Dict[str, Any])
         async def get_discovery_progress() -> Dict[str, Any]:
@@ -241,21 +274,24 @@ class WebApp:
             try:
                 if self.progress_tracker:
                     progress = self.progress_tracker.get_progress()
-                    
+
                     return {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "progress": progress,
-                        "available": True
+                        "available": True,
                     }
                 else:
                     return {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "progress": {},
                         "available": False,
-                        "message": "Progress tracker not available"
+                        "message": "Progress tracker not available",
                     }
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get discovery progress: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to get discovery progress: {str(e)}",
+                )
 
         @self.app.get("/api/discovery/progress/{spa_id}", response_model=Dict[str, Any])
         async def get_spa_progress(spa_id: str) -> Dict[str, Any]:
@@ -263,21 +299,28 @@ class WebApp:
             try:
                 if self.progress_tracker:
                     spa_progress = self.progress_tracker.get_spa_progress(spa_id)
-                    
+
                     if spa_progress:
                         return {
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "spa_progress": spa_progress,
-                            "available": True
+                            "available": True,
                         }
                     else:
-                        raise HTTPException(status_code=404, detail=f"Spa {spa_id} not found in progress tracker")
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Spa {spa_id} not found in progress tracker",
+                        )
                 else:
-                    raise HTTPException(status_code=503, detail="Progress tracker not available")
+                    raise HTTPException(
+                        status_code=503, detail="Progress tracker not available"
+                    )
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get spa progress: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get spa progress: {str(e)}"
+                )
 
         # Command endpoints
         @self.app.post("/api/commands/set_temperature")
@@ -288,22 +331,30 @@ class WebApp:
                 temperature = data.get("temperature")
 
                 if temperature is None:
-                    raise HTTPException(status_code=400, detail="Temperature value required")
+                    raise HTTPException(
+                        status_code=400, detail="Temperature value required"
+                    )
 
                 if self.smarttub_client:
                     await self.smarttub_client.set_temperature(float(temperature))
                     return {
                         "status": "success",
                         "message": f"Temperature set to {temperature}°C",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="SmartTub client not available")
+                    raise HTTPException(
+                        status_code=503, detail="SmartTub client not available"
+                    )
 
             except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid temperature value: {str(e)}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid temperature value: {str(e)}"
+                )
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to set temperature: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to set temperature: {str(e)}"
+                )
 
         @self.app.post("/api/commands/set_heat_mode")
         async def set_heat_mode(request: Request) -> Dict[str, Any]:
@@ -320,13 +371,17 @@ class WebApp:
                     return {
                         "status": "success",
                         "message": f"Heat mode set to {mode}",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="SmartTub client not available")
+                    raise HTTPException(
+                        status_code=503, detail="SmartTub client not available"
+                    )
 
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to set heat mode: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to set heat mode: {str(e)}"
+                )
 
         @self.app.post("/api/commands/set_pump_state")
         async def set_pump_state(request: Request) -> Dict[str, Any]:
@@ -344,13 +399,17 @@ class WebApp:
                     return {
                         "status": "success",
                         "message": f"Pump {'started' if enabled else 'stopped'}",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="SmartTub client not available")
+                    raise HTTPException(
+                        status_code=503, detail="SmartTub client not available"
+                    )
 
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to set pump state: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to set pump state: {str(e)}"
+                )
 
         @self.app.post("/api/commands/set_light_state")
         async def set_light_state(request: Request) -> Dict[str, Any]:
@@ -368,13 +427,17 @@ class WebApp:
                     return {
                         "status": "success",
                         "message": f"Light {'turned on' if enabled else 'turned off'}",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="SmartTub client not available")
+                    raise HTTPException(
+                        status_code=503, detail="SmartTub client not available"
+                    )
 
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to set light state: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to set light state: {str(e)}"
+                )
 
         @self.app.post("/api/commands/set_light_color")
         async def set_light_color(request: Request) -> Dict[str, Any]:
@@ -391,13 +454,17 @@ class WebApp:
                     return {
                         "status": "success",
                         "message": f"Light color set to {color}",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="SmartTub client not available")
+                    raise HTTPException(
+                        status_code=503, detail="SmartTub client not available"
+                    )
 
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to set light color: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to set light color: {str(e)}"
+                )
 
         @self.app.post("/api/commands/set_light_brightness")
         async def set_light_brightness(request: Request) -> Dict[str, Any]:
@@ -407,22 +474,30 @@ class WebApp:
                 brightness = data.get("brightness")
 
                 if brightness is None:
-                    raise HTTPException(status_code=400, detail="Brightness value required")
+                    raise HTTPException(
+                        status_code=400, detail="Brightness value required"
+                    )
 
                 if self.smarttub_client:
                     await self.smarttub_client.set_light_brightness(int(brightness))
                     return {
                         "status": "success",
                         "message": f"Light brightness set to {brightness}%",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
-                    raise HTTPException(status_code=503, detail="SmartTub client not available")
+                    raise HTTPException(
+                        status_code=503, detail="SmartTub client not available"
+                    )
 
             except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid brightness value: {str(e)}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid brightness value: {str(e)}"
+                )
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to set light brightness: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to set light brightness: {str(e)}"
+                )
 
         @self.app.get("/api/commands/history")
         async def get_command_history() -> Dict[str, Any]:
@@ -435,10 +510,10 @@ class WebApp:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "command": "system_startup",
                         "status": "success",
-                        "message": "System initialized"
+                        "message": "System initialized",
                     }
                 ],
-                "total": 1
+                "total": 1,
             }
 
         # Background Discovery API endpoints
@@ -450,122 +525,143 @@ class WebApp:
                     status = await self.discovery_coordinator.get_status()
                     return status
                 else:
-                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
+                    raise HTTPException(
+                        status_code=503, detail="Discovery coordinator not available"
+                    )
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get discovery status: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get discovery status: {str(e)}"
+                )
 
         @self.app.post("/api/discovery/start")
         async def start_background_discovery(request: Request) -> Dict[str, Any]:
             """Start background discovery process."""
             try:
                 if not self.discovery_coordinator:
-                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
-                
+                    raise HTTPException(
+                        status_code=503, detail="Discovery coordinator not available"
+                    )
+
                 # Parse request body
                 body = await request.json()
                 mode = body.get("mode", "quick")
-                
+
                 # Validate mode
                 if mode not in ["full", "quick", "yaml_only"]:
                     raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}")
-                
+
                 # Start discovery
                 result = await self.discovery_coordinator.start_discovery(mode=mode)
-                
+
                 if result["success"]:
                     return {
                         "success": True,
                         "message": f"Discovery started in {mode} mode",
-                        "mode": mode
+                        "mode": mode,
                     }
                 else:
-                    raise HTTPException(status_code=400, detail=result.get("error", "Failed to start discovery"))
-                    
+                    raise HTTPException(
+                        status_code=400,
+                        detail=result.get("error", "Failed to start discovery"),
+                    )
+
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to start discovery: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to start discovery: {str(e)}"
+                )
 
         @self.app.post("/api/discovery/stop")
         async def stop_background_discovery() -> Dict[str, Any]:
             """Stop running background discovery."""
             try:
                 if not self.discovery_coordinator:
-                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
-                
+                    raise HTTPException(
+                        status_code=503, detail="Discovery coordinator not available"
+                    )
+
                 result = await self.discovery_coordinator.stop_discovery()
-                
+
                 if result["success"]:
-                    return {
-                        "success": True,
-                        "message": "Discovery stopped"
-                    }
+                    return {"success": True, "message": "Discovery stopped"}
                 else:
-                    raise HTTPException(status_code=400, detail=result.get("error", "Failed to stop discovery"))
-                    
+                    raise HTTPException(
+                        status_code=400,
+                        detail=result.get("error", "Failed to stop discovery"),
+                    )
+
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to stop discovery: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to stop discovery: {str(e)}"
+                )
 
         @self.app.get("/api/discovery/results", response_model=Dict[str, Any])
         async def get_discovery_results() -> Dict[str, Any]:
             """Get discovery results if available."""
             try:
                 if not self.discovery_coordinator:
-                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
-                
+                    raise HTTPException(
+                        status_code=503, detail="Discovery coordinator not available"
+                    )
+
                 result = await self.discovery_coordinator.get_results()
-                
+
                 if result["success"]:
                     return result
                 else:
-                    raise HTTPException(status_code=404, detail=result.get("error", "No results available"))
-                    
+                    raise HTTPException(
+                        status_code=404,
+                        detail=result.get("error", "No results available"),
+                    )
+
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to get results: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get results: {str(e)}"
+                )
 
         @self.app.post("/api/discovery/reset")
         async def reset_discovery_state() -> Dict[str, Any]:
             """Reset discovery state to idle."""
             try:
                 if not self.discovery_coordinator:
-                    raise HTTPException(status_code=503, detail="Discovery coordinator not available")
-                
+                    raise HTTPException(
+                        status_code=503, detail="Discovery coordinator not available"
+                    )
+
                 result = await self.discovery_coordinator.reset_state()
-                
+
                 if result["success"]:
                     return result
                 else:
-                    raise HTTPException(status_code=400, detail=result.get("error", "Failed to reset state"))
-                    
+                    raise HTTPException(
+                        status_code=400,
+                        detail=result.get("error", "Failed to reset state"),
+                    )
+
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to reset state: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to reset state: {str(e)}"
+                )
 
         @self.app.get("/discovery", response_class=HTMLResponse)
         async def discovery_page(request: Request) -> HTMLResponse:
             """Render discovery page."""
             try:
                 return self.templates.TemplateResponse(
-                    "discovery.html",
-                    {
-                        "request": request,
-                        "config": self.config
-                    }
+                    "discovery.html", {"request": request, "config": self.config}
                 )
             except Exception as e:
                 return self.templates.TemplateResponse(
-                    "error.html",
-                    {
-                        "request": request,
-                        "error": str(e)
-                    }
+                    "error.html", {"request": request, "error": str(e)}
                 )
 
         @self.app.get("/controls", response_class=HTMLResponse)
@@ -575,45 +671,45 @@ class WebApp:
                 # Get capabilities for template
                 capabilities = {}
                 if self.capability_detector:
-                    for spa_id in list(self.capability_detector._capabilities_cache.keys()):
-                        capabilities[spa_id] = self.capability_detector.get_capability_profile(spa_id)
+                    for spa_id in list(
+                        self.capability_detector._capabilities_cache.keys()
+                    ):
+                        capabilities[spa_id] = (
+                            self.capability_detector.get_capability_profile(spa_id)
+                        )
 
                 return self.templates.TemplateResponse(
                     "controls.html",
                     {
                         "request": request,
                         "capabilities": capabilities,
-                        "config": self.config
-                    }
+                        "config": self.config,
+                    },
                 )
             except Exception as e:
                 return self.templates.TemplateResponse(
-                    "error.html",
-                    {
-                        "request": request,
-                        "error": str(e)
-                    }
+                    "error.html", {"request": request, "error": str(e)}
                 )
 
 
 # Convenience function for creating the app
 def create_app(
-    config: AppConfig, 
-    state_manager: StateManager, 
-    smarttub_client: SmartTubClient = None, 
+    config: AppConfig,
+    state_manager: StateManager,
+    smarttub_client: SmartTubClient = None,
     capability_detector: CapabilityDetector = None,
     error_tracker: Any = None,
     progress_tracker: Any = None,
-    discovery_coordinator: Any = None
+    discovery_coordinator: Any = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
     web_app = WebApp(
-        config, 
-        state_manager, 
-        smarttub_client, 
-        capability_detector, 
+        config,
+        state_manager,
+        smarttub_client,
+        capability_detector,
         error_tracker,
         progress_tracker,
-        discovery_coordinator
+        discovery_coordinator,
     )
     return web_app.app

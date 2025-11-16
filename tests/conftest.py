@@ -25,6 +25,7 @@ from src.core.config_loader import (
 try:  # pragma: no cover - library availability depends on environment
     from smarttub.api import LoginFailed as SmartTubLoginFailed  # type: ignore
 except Exception:  # pragma: no cover - fallback when dependency missing
+
     class SmartTubLoginFailed(RuntimeError):
         pass
 
@@ -72,7 +73,9 @@ class FakeMQTTClient:
         self.logger = logger
         self.enable_logger_calls += 1
 
-    def username_pw_set(self, username: str | None, password: str | None = None) -> None:
+    def username_pw_set(
+        self, username: str | None, password: str | None = None
+    ) -> None:
         self.username = username
         self.password = password
 
@@ -86,7 +89,9 @@ class FakeMQTTClient:
         self.connected = True
         self.connect_args = (host, port, keepalive)
         if self.on_connect is not None:
-            self.on_connect(self, None, None, types.SimpleNamespace(is_failure=False, value=0), None)  # type: ignore[name-defined]
+            self.on_connect(
+                self, None, None, types.SimpleNamespace(is_failure=False, value=0), None
+            )  # type: ignore[name-defined]
 
     def disconnect(self) -> None:
         if not self.connected:
@@ -94,8 +99,13 @@ class FakeMQTTClient:
         self.connected = False
         self.disconnect_calls += 1
         if self.on_disconnect is not None:
-            self.on_disconnect(self, None, types.SimpleNamespace(is_disconnect_packet_from_server=False),  # type: ignore[name-defined]
-                               types.SimpleNamespace(is_failure=False, value=0), None)
+            self.on_disconnect(
+                self,
+                None,
+                types.SimpleNamespace(is_disconnect_packet_from_server=False),  # type: ignore[name-defined]
+                types.SimpleNamespace(is_failure=False, value=0),
+                None,
+            )
 
     def loop_start(self) -> None:
         self.loop_running = True
@@ -108,7 +118,9 @@ class FakeMQTTClient:
             raise RuntimeError("connect must be called before reconnect")
         self.reconnect_calls.append(self.connect_args)
 
-    def publish(self, topic: str, payload: Any = None, qos: int = 0, retain: bool = False) -> FakePublishResult:
+    def publish(
+        self, topic: str, payload: Any = None, qos: int = 0, retain: bool = False
+    ) -> FakePublishResult:
         if self.publish_hook is not None:
             return self.publish_hook(topic, payload, qos, retain)
         self.publish_mid += 1
@@ -139,7 +151,9 @@ class FakeSpa:
         self._lights = [copy.deepcopy(item) for item in lights or []]
         self._errors = [copy.deepcopy(item) for item in errors or []]
         self._reminders = [copy.deepcopy(item) for item in reminders or []]
-        self._debug_status = copy.deepcopy(debug_status) if debug_status is not None else None
+        self._debug_status = (
+            copy.deepcopy(debug_status) if debug_status is not None else None
+        )
         self.requests: list[tuple[str, str, Any]] = []
         self._request_handlers: Dict[tuple[str, str], Callable[[Any], Any] | Any] = {}
 
@@ -203,12 +217,16 @@ class FakeSpa:
     def set_debug_status(self, status: dict[str, Any]) -> None:
         self._debug_status = copy.deepcopy(status)
 
-    def set_request_handler(self, method: str, resource: str, handler: Callable[[Any], Any] | Any) -> None:
+    def set_request_handler(
+        self, method: str, resource: str, handler: Callable[[Any], Any] | Any
+    ) -> None:
         self._request_handlers[(method.upper(), resource)] = handler
 
 
 class FakeAccount:
-    def __init__(self, account_id: str = "account-1", spas: Optional[Iterable[FakeSpa]] = None) -> None:
+    def __init__(
+        self, account_id: str = "account-1", spas: Optional[Iterable[FakeSpa]] = None
+    ) -> None:
         self.id = account_id
         self.email = f"{account_id}@example.com"
         self.properties: dict[str, Any] = {"id": account_id, "email": self.email}
@@ -313,7 +331,9 @@ def _apply_dotted_overrides(config: AppConfig, overrides: Dict[str, Any]) -> Non
 
 @pytest.fixture
 def app_config_factory() -> Callable[..., AppConfig]:
-    def factory(*, overrides: Optional[Dict[str, Any]] = None, **sections: Any) -> AppConfig:
+    def factory(
+        *, overrides: Optional[Dict[str, Any]] = None, **sections: Any
+    ) -> AppConfig:
         config = _build_base_app_config()
 
         for section, override in sections.items():

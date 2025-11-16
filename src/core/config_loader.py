@@ -21,7 +21,9 @@ class SmartTubConfig:
     token: str | None
     polling_interval_seconds: int = 30
     poll_min_interval_seconds: int = 5  # New: Minimum interval between polls
-    state_update_delay_seconds: float = 2.5  # Delay after command before fetching updated state
+    state_update_delay_seconds: float = (
+        2.5  # Delay after command before fetching updated state
+    )
     max_retries: int = 2
     retry_backoff_seconds: int = 5
 
@@ -31,11 +33,34 @@ class SmartTubConfig:
         device_id = _optional_string(data.get("device_id"))
         password = _optional_non_empty(data.get("password"))
         token = _optional_non_empty(data.get("token"))
-        polling = _coerce_int(data.get("polling_interval_seconds"), "smarttub.polling_interval_seconds", default=30, min_value=1)
-        poll_min = _coerce_int(data.get("poll_min_interval_seconds"), "smarttub.poll_min_interval_seconds", default=5, min_value=1)
-        state_update_delay = _coerce_float(data.get("state_update_delay_seconds"), "smarttub.state_update_delay_seconds", default=2.5, min_value=0.5, max_value=10.0)
-        max_retries = _coerce_int(data.get("max_retries"), "smarttub.max_retries", default=2, min_value=0)
-        backoff = _coerce_int(data.get("retry_backoff_seconds"), "smarttub.retry_backoff_seconds", default=5, min_value=1)
+        polling = _coerce_int(
+            data.get("polling_interval_seconds"),
+            "smarttub.polling_interval_seconds",
+            default=30,
+            min_value=1,
+        )
+        poll_min = _coerce_int(
+            data.get("poll_min_interval_seconds"),
+            "smarttub.poll_min_interval_seconds",
+            default=5,
+            min_value=1,
+        )
+        state_update_delay = _coerce_float(
+            data.get("state_update_delay_seconds"),
+            "smarttub.state_update_delay_seconds",
+            default=2.5,
+            min_value=0.5,
+            max_value=10.0,
+        )
+        max_retries = _coerce_int(
+            data.get("max_retries"), "smarttub.max_retries", default=2, min_value=0
+        )
+        backoff = _coerce_int(
+            data.get("retry_backoff_seconds"),
+            "smarttub.retry_backoff_seconds",
+            default=5,
+            min_value=1,
+        )
         return cls(
             email=email,
             password=password,
@@ -54,7 +79,9 @@ class SmartTubConfig:
         if self.poll_min_interval_seconds <= 0:
             raise ConfigError("smarttub.poll_min_interval_seconds must be positive")
         if self.poll_min_interval_seconds > self.polling_interval_seconds:
-            raise ConfigError("smarttub.poll_min_interval_seconds cannot be greater than polling_interval_seconds")
+            raise ConfigError(
+                "smarttub.poll_min_interval_seconds cannot be greater than polling_interval_seconds"
+            )
         if self.max_retries < 0:
             raise ConfigError("smarttub.max_retries cannot be negative")
         if self.retry_backoff_seconds <= 0:
@@ -71,7 +98,9 @@ class MQTTTLSConfig:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "MQTTTLSConfig":
         enabled = _coerce_bool(data.get("enabled"), "mqtt.tls.enabled", default=False)
-        ca_cert_path = _optional_string(data.get("ca_cert_path"), allow_empty=True) or ""
+        ca_cert_path = (
+            _optional_string(data.get("ca_cert_path"), allow_empty=True) or ""
+        )
         return cls(enabled=enabled, ca_cert_path=ca_cert_path)
 
 
@@ -92,13 +121,21 @@ class MQTTConfig:
         broker_url = _require_str(data, "broker_url", "mqtt")
         username = _optional_string(data.get("username"))
         password = _optional_string(data.get("password"))
-        client_id = _optional_string(data.get("client_id"), allow_empty=False) or "smarttub-mqtt"
-        base_topic = _optional_string(data.get("base_topic"), allow_empty=False) or "smarttub-mqtt"
+        client_id = (
+            _optional_string(data.get("client_id"), allow_empty=False)
+            or "smarttub-mqtt"
+        )
+        base_topic = (
+            _optional_string(data.get("base_topic"), allow_empty=False)
+            or "smarttub-mqtt"
+        )
         qos = _coerce_int(data.get("qos"), "mqtt.qos", default=1, min_value=0)
         if qos > 2:
             raise ConfigError("mqtt.qos must be between 0 and 2")
         retain = _coerce_bool(data.get("retain"), "mqtt.retain", default=True)
-        keepalive = _coerce_int(data.get("keepalive"), "mqtt.keepalive", default=60, min_value=10)
+        keepalive = _coerce_int(
+            data.get("keepalive"), "mqtt.keepalive", default=60, min_value=10
+        )
         tls_section = data.get("tls") if isinstance(data.get("tls"), Mapping) else {}
         tls = MQTTTLSConfig.from_dict(tls_section)
         return cls(
@@ -140,7 +177,9 @@ class WebConfig:
         enabled = _coerce_bool(data.get("enabled"), "web.enabled", default=True)
         host = _optional_string(data.get("host"), allow_empty=False) or "0.0.0.0"
         port = _coerce_int(data.get("port"), "web.port", default=8080, min_value=1)
-        auth_enabled = _coerce_bool(data.get("auth_enabled"), "web.auth_enabled", default=False)
+        auth_enabled = _coerce_bool(
+            data.get("auth_enabled"), "web.auth_enabled", default=False
+        )
         username = _optional_string(data.get("basic_auth_username"))
         password = _optional_string(data.get("basic_auth_password"))
         return cls(
@@ -155,7 +194,9 @@ class WebConfig:
     def validate(self) -> None:
         if not 1 <= self.port <= 65535:
             raise ConfigError("web.port must be between 1 and 65535")
-        if self.auth_enabled and (not self.basic_auth_username or not self.basic_auth_password):
+        if self.auth_enabled and (
+            not self.basic_auth_username or not self.basic_auth_password
+        ):
             raise ConfigError("web basic auth enabled but credentials missing")
 
 
@@ -175,16 +216,38 @@ class LoggingConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "LoggingConfig":
-        level = (_optional_string(data.get("level"), allow_empty=False) or "info").lower()
-        mqtt_forwarding = _coerce_bool(data.get("mqtt_forwarding"), "logging.mqtt_forwarding", default=False)
-        stdout_format = _optional_string(data.get("stdout_format"), allow_empty=False) or "json"
+        level = (
+            _optional_string(data.get("level"), allow_empty=False) or "info"
+        ).lower()
+        mqtt_forwarding = _coerce_bool(
+            data.get("mqtt_forwarding"), "logging.mqtt_forwarding", default=False
+        )
+        stdout_format = (
+            _optional_string(data.get("stdout_format"), allow_empty=False) or "json"
+        )
         file_path = _optional_string(data.get("file_path"))
-        log_dir = _optional_string(data.get("log_dir"), allow_empty=False) or "/var/log/smarttub-mqtt"
-        log_max_size_mb = _coerce_int(data.get("log_max_size_mb"), "logging.log_max_size_mb", default=5, min_value=1)
-        log_max_files = _coerce_int(data.get("log_max_files"), "logging.log_max_files", default=5, min_value=1)
-        log_compress = _coerce_bool(data.get("log_compress"), "logging.log_compress", default=True)
-        mqtt_log_enabled = _coerce_bool(data.get("mqtt_log_enabled"), "logging.mqtt_log_enabled", default=True)
-        mqtt_log_level = (_optional_string(data.get("mqtt_log_level"), allow_empty=False) or "warning").lower()
+        log_dir = (
+            _optional_string(data.get("log_dir"), allow_empty=False)
+            or "/var/log/smarttub-mqtt"
+        )
+        log_max_size_mb = _coerce_int(
+            data.get("log_max_size_mb"),
+            "logging.log_max_size_mb",
+            default=5,
+            min_value=1,
+        )
+        log_max_files = _coerce_int(
+            data.get("log_max_files"), "logging.log_max_files", default=5, min_value=1
+        )
+        log_compress = _coerce_bool(
+            data.get("log_compress"), "logging.log_compress", default=True
+        )
+        mqtt_log_enabled = _coerce_bool(
+            data.get("mqtt_log_enabled"), "logging.mqtt_log_enabled", default=True
+        )
+        mqtt_log_level = (
+            _optional_string(data.get("mqtt_log_level"), allow_empty=False) or "warning"
+        ).lower()
         return cls(
             level=level,
             mqtt_forwarding=mqtt_forwarding,
@@ -195,7 +258,7 @@ class LoggingConfig:
             log_max_files=log_max_files,
             log_compress=log_compress,
             mqtt_log_enabled=mqtt_log_enabled,
-            mqtt_log_level=mqtt_log_level
+            mqtt_log_level=mqtt_log_level,
         )
 
     def validate(self) -> None:
@@ -203,7 +266,9 @@ class LoggingConfig:
         if self.level.lower() not in allowed:
             raise ConfigError(f"logging.level must be one of {sorted(allowed)}")
         if self.mqtt_log_level.lower() not in allowed:
-            raise ConfigError(f"logging.mqtt_log_level must be one of {sorted(allowed)}")
+            raise ConfigError(
+                f"logging.mqtt_log_level must be one of {sorted(allowed)}"
+            )
         if self.log_max_size_mb < 1:
             raise ConfigError("logging.log_max_size_mb must be at least 1 MB")
         if self.log_max_files < 1:
@@ -217,13 +282,25 @@ class ObservabilityConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ObservabilityConfig":
-        heartbeat = _coerce_int(data.get("heartbeat_interval_seconds"), "observability.heartbeat_interval_seconds", default=30, min_value=1)
-        batch = _coerce_int(data.get("telemetry_batch_size"), "observability.telemetry_batch_size", default=10, min_value=1)
+        heartbeat = _coerce_int(
+            data.get("heartbeat_interval_seconds"),
+            "observability.heartbeat_interval_seconds",
+            default=30,
+            min_value=1,
+        )
+        batch = _coerce_int(
+            data.get("telemetry_batch_size"),
+            "observability.telemetry_batch_size",
+            default=10,
+            min_value=1,
+        )
         return cls(heartbeat_interval_seconds=heartbeat, telemetry_batch_size=batch)
 
     def validate(self) -> None:
         if self.heartbeat_interval_seconds <= 0:
-            raise ConfigError("observability.heartbeat_interval_seconds must be positive")
+            raise ConfigError(
+                "observability.heartbeat_interval_seconds must be positive"
+            )
         if self.telemetry_batch_size <= 0:
             raise ConfigError("observability.telemetry_batch_size must be positive")
 
@@ -234,7 +311,12 @@ class WebUIConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "WebUIConfig":
-        refresh = _coerce_int(data.get("refresh_interval_seconds"), "web_ui.refresh_interval_seconds", default=5, min_value=1)
+        refresh = _coerce_int(
+            data.get("refresh_interval_seconds"),
+            "web_ui.refresh_interval_seconds",
+            default=5,
+            min_value=1,
+        )
         return cls(refresh_interval_seconds=refresh)
 
     def validate(self) -> None:
@@ -252,11 +334,34 @@ class SafetyConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SafetyConfig":
-        fail_safe_mode = _optional_string(data.get("fail_safe_mode"), allow_empty=False) or "stop_pumps"
-        timeout = _coerce_int(data.get("command_timeout_seconds"), "safety.command_timeout_seconds", default=7, min_value=1)
-        post_wait = _coerce_int(data.get("post_command_wait_seconds"), "safety.post_command_wait_seconds", default=12, min_value=1)
-        retries = _coerce_int(data.get("command_verification_retries"), "safety.command_verification_retries", default=3, min_value=0)
-        max_retries = _coerce_int(data.get("command_max_retries"), "safety.command_max_retries", default=2, min_value=0)
+        fail_safe_mode = (
+            _optional_string(data.get("fail_safe_mode"), allow_empty=False)
+            or "stop_pumps"
+        )
+        timeout = _coerce_int(
+            data.get("command_timeout_seconds"),
+            "safety.command_timeout_seconds",
+            default=7,
+            min_value=1,
+        )
+        post_wait = _coerce_int(
+            data.get("post_command_wait_seconds"),
+            "safety.post_command_wait_seconds",
+            default=12,
+            min_value=1,
+        )
+        retries = _coerce_int(
+            data.get("command_verification_retries"),
+            "safety.command_verification_retries",
+            default=3,
+            min_value=0,
+        )
+        max_retries = _coerce_int(
+            data.get("command_max_retries"),
+            "safety.command_max_retries",
+            default=2,
+            min_value=0,
+        )
         return cls(
             fail_safe_mode=fail_safe_mode,
             command_timeout_seconds=timeout,
@@ -287,10 +392,29 @@ class CapabilityConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CapabilityConfig":
-        cache_expiry = _coerce_int(data.get("cache_expiry_seconds"), "capability.cache_expiry_seconds", default=3600, min_value=60)
-        refresh_interval = _coerce_int(data.get("refresh_interval_seconds"), "capability.refresh_interval_seconds", default=300, min_value=60)
-        discovery_refresh = _coerce_int(data.get("discovery_refresh_interval"), "capability.discovery_refresh_interval", default=3600, min_value=300)
-        auto_discovery = _coerce_bool(data.get("enable_auto_discovery"), "capability.enable_auto_discovery", default=True)
+        cache_expiry = _coerce_int(
+            data.get("cache_expiry_seconds"),
+            "capability.cache_expiry_seconds",
+            default=3600,
+            min_value=60,
+        )
+        refresh_interval = _coerce_int(
+            data.get("refresh_interval_seconds"),
+            "capability.refresh_interval_seconds",
+            default=300,
+            min_value=60,
+        )
+        discovery_refresh = _coerce_int(
+            data.get("discovery_refresh_interval"),
+            "capability.discovery_refresh_interval",
+            default=3600,
+            min_value=300,
+        )
+        auto_discovery = _coerce_bool(
+            data.get("enable_auto_discovery"),
+            "capability.enable_auto_discovery",
+            default=True,
+        )
         return cls(
             cache_expiry_seconds=cache_expiry,
             refresh_interval_seconds=refresh_interval,
@@ -300,11 +424,17 @@ class CapabilityConfig:
 
     def validate(self) -> None:
         if self.cache_expiry_seconds < 60:
-            raise ConfigError("capability.cache_expiry_seconds must be at least 60 seconds")
+            raise ConfigError(
+                "capability.cache_expiry_seconds must be at least 60 seconds"
+            )
         if self.refresh_interval_seconds < 60:
-            raise ConfigError("capability.refresh_interval_seconds must be at least 60 seconds")
+            raise ConfigError(
+                "capability.refresh_interval_seconds must be at least 60 seconds"
+            )
         if self.discovery_refresh_interval < 300:
-            raise ConfigError("capability.discovery_refresh_interval must be at least 300 seconds (5 minutes)")
+            raise ConfigError(
+                "capability.discovery_refresh_interval must be at least 300 seconds (5 minutes)"
+            )
 
 
 @dataclass
@@ -317,10 +447,23 @@ class DockerConfig:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "DockerConfig":
-        config_volume = _optional_string(data.get("config_volume"), allow_empty=False) or "/config"
-        env_file = _optional_string(data.get("env_file"), allow_empty=False) or "/config/.env"
-        health = _coerce_int(data.get("healthcheck_interval_seconds"), "docker.healthcheck_interval_seconds", default=30, min_value=1)
-        return cls(config_volume=config_volume, env_file=env_file, healthcheck_interval_seconds=health)
+        config_volume = (
+            _optional_string(data.get("config_volume"), allow_empty=False) or "/config"
+        )
+        env_file = (
+            _optional_string(data.get("env_file"), allow_empty=False) or "/config/.env"
+        )
+        health = _coerce_int(
+            data.get("healthcheck_interval_seconds"),
+            "docker.healthcheck_interval_seconds",
+            default=30,
+            min_value=1,
+        )
+        return cls(
+            config_volume=config_volume,
+            env_file=env_file,
+            healthcheck_interval_seconds=health,
+        )
 
     def validate(self) -> None:
         if self.healthcheck_interval_seconds <= 0:
@@ -339,7 +482,9 @@ class AppConfig:
     docker: DockerConfig = field(default_factory=DockerConfig)
     capability: CapabilityConfig = field(default_factory=CapabilityConfig)
     check_smarttub: bool = True  # Default: True, will be read from .env
-    discovery_test_all_light_modes: bool = False  # If True: perform exhaustive light mode testing
+    discovery_test_all_light_modes: bool = (
+        False  # If True: perform exhaustive light mode testing
+    )
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AppConfig":
@@ -347,7 +492,9 @@ class AppConfig:
         mqtt = MQTTConfig.from_dict(_get_section(data, "mqtt"))
         web = WebConfig.from_dict(_get_section(data, "web"))
         logging = LoggingConfig.from_dict(_get_section(data, "logging"))
-        observability = ObservabilityConfig.from_dict(_get_section(data, "observability"))
+        observability = ObservabilityConfig.from_dict(
+            _get_section(data, "observability")
+        )
         web_ui = WebUIConfig.from_dict(_get_section(data, "web_ui"))
         safety = SafetyConfig.from_dict(_get_section(data, "safety"))
         docker = DockerConfig.from_dict(_get_section(data, "docker"))
@@ -393,17 +540,19 @@ def load_config(path: Path | str | None = None) -> AppConfig:
     except Exception:
         # Fallback to default behaviour if anything goes wrong
         load_dotenv()
-    
+
     config_path = _resolve_config_path(path)
 
     # If no YAML config, build config directly from env vars
     if config_path is None:
         # Create empty config structure - will be populated by env overrides
         config = AppConfig(
-            smarttub=SmartTubConfig(email="", password=None, device_id=None, token=None),
+            smarttub=SmartTubConfig(
+                email="", password=None, device_id=None, token=None
+            ),
             mqtt=MQTTConfig(broker_url="mqtt://localhost:1883"),
             web=WebConfig(host="0.0.0.0", port=8080),
-            logging=LoggingConfig(level="info")
+            logging=LoggingConfig(level="info"),
         )
         _apply_env_overrides(config, os.environ)
         config.validate()
@@ -450,10 +599,14 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
         config.smarttub.email = value
     # Read CHECK_SMARTTUB from .env
     if "CHECK_SMARTTUB" in env:
-        config.check_smarttub = _coerce_bool(env.get("CHECK_SMARTTUB"), "CHECK_SMARTTUB")
+        config.check_smarttub = _coerce_bool(
+            env.get("CHECK_SMARTTUB"), "CHECK_SMARTTUB"
+        )
     # Read DISCOVERY_TEST_ALL_LIGHT_MODES from .env
     if "DISCOVERY_TEST_ALL_LIGHT_MODES" in env:
-        config.discovery_test_all_light_modes = _coerce_bool(env.get("DISCOVERY_TEST_ALL_LIGHT_MODES"), "DISCOVERY_TEST_ALL_LIGHT_MODES")
+        config.discovery_test_all_light_modes = _coerce_bool(
+            env.get("DISCOVERY_TEST_ALL_LIGHT_MODES"), "DISCOVERY_TEST_ALL_LIGHT_MODES"
+        )
     if "SMARTTUB_PASSWORD" in env:
         config.smarttub.password = _optional_non_empty(env.get("SMARTTUB_PASSWORD"))
     if "SMARTTUB_TOKEN" in env:
@@ -469,7 +622,9 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
             min_value=1,
         )
     if "SMARTTUB_MAX_RETRIES" in env:
-        config.smarttub.max_retries = _coerce_int(env.get("SMARTTUB_MAX_RETRIES"), "SMARTTUB_MAX_RETRIES", min_value=0)
+        config.smarttub.max_retries = _coerce_int(
+            env.get("SMARTTUB_MAX_RETRIES"), "SMARTTUB_MAX_RETRIES", min_value=0
+        )
     if "SMARTTUB_RETRY_BACKOFF_SECONDS" in env:
         config.smarttub.retry_backoff_seconds = _coerce_int(
             env.get("SMARTTUB_RETRY_BACKOFF_SECONDS"),
@@ -519,7 +674,9 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
     if "MQTT_RETAIN" in env:
         config.mqtt.retain = _coerce_bool(env.get("MQTT_RETAIN"), "MQTT_RETAIN")
     if "MQTT_KEEPALIVE" in env:
-        config.mqtt.keepalive = _coerce_int(env.get("MQTT_KEEPALIVE"), "MQTT_KEEPALIVE", min_value=10)
+        config.mqtt.keepalive = _coerce_int(
+            env.get("MQTT_KEEPALIVE"), "MQTT_KEEPALIVE", min_value=10
+        )
 
     if "LOG_LEVEL" in env:
         value = env["LOG_LEVEL"].strip()
@@ -527,7 +684,9 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
             raise ConfigError("LOG_LEVEL cannot be empty")
         config.logging.level = value.lower()
     if "LOG_MQTT_FORWARDING" in env:
-        config.logging.mqtt_forwarding = _coerce_bool(env.get("LOG_MQTT_FORWARDING"), "LOG_MQTT_FORWARDING")
+        config.logging.mqtt_forwarding = _coerce_bool(
+            env.get("LOG_MQTT_FORWARDING"), "LOG_MQTT_FORWARDING"
+        )
     if "LOG_STDOUT_FORMAT" in env:
         value = env["LOG_STDOUT_FORMAT"].strip()
         if not value:
@@ -538,15 +697,25 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
     if "LOG_DIR" in env:
         config.logging.log_dir = env.get("LOG_DIR", "/var/log/smarttub-mqtt").strip()
     if "LOG_MAX_SIZE_MB" in env:
-        config.logging.log_max_size_mb = _coerce_int(env.get("LOG_MAX_SIZE_MB"), "LOG_MAX_SIZE_MB", min_value=1)
+        config.logging.log_max_size_mb = _coerce_int(
+            env.get("LOG_MAX_SIZE_MB"), "LOG_MAX_SIZE_MB", min_value=1
+        )
     if "LOG_MAX_FILES" in env:
-        config.logging.log_max_files = _coerce_int(env.get("LOG_MAX_FILES"), "LOG_MAX_FILES", min_value=1)
+        config.logging.log_max_files = _coerce_int(
+            env.get("LOG_MAX_FILES"), "LOG_MAX_FILES", min_value=1
+        )
     if "LOG_COMPRESS" in env:
-        config.logging.log_compress = _coerce_bool(env.get("LOG_COMPRESS"), "LOG_COMPRESS")
+        config.logging.log_compress = _coerce_bool(
+            env.get("LOG_COMPRESS"), "LOG_COMPRESS"
+        )
     if "LOG_MQTT_ENABLED" in env:
-        config.logging.mqtt_log_enabled = _coerce_bool(env.get("LOG_MQTT_ENABLED"), "LOG_MQTT_ENABLED")
+        config.logging.mqtt_log_enabled = _coerce_bool(
+            env.get("LOG_MQTT_ENABLED"), "LOG_MQTT_ENABLED"
+        )
     if "LOG_MQTT_LEVEL" in env:
-        config.logging.mqtt_log_level = env.get("LOG_MQTT_LEVEL", "warning").strip().lower()
+        config.logging.mqtt_log_level = (
+            env.get("LOG_MQTT_LEVEL", "warning").strip().lower()
+        )
 
     if "WEB_HOST" in env:
         value = env["WEB_HOST"].strip()
@@ -558,13 +727,19 @@ def _apply_env_overrides(config: AppConfig, env: Mapping[str, str]) -> None:
     if "WEB_PORT" in env:
         config.web.port = _coerce_int(env.get("WEB_PORT"), "WEB_PORT", min_value=1)
     if "WEB_AUTH_ENABLED" in env:
-        config.web.auth_enabled = _coerce_bool(env.get("WEB_AUTH_ENABLED"), "WEB_AUTH_ENABLED")
+        config.web.auth_enabled = _coerce_bool(
+            env.get("WEB_AUTH_ENABLED"), "WEB_AUTH_ENABLED"
+        )
     if "BASIC_AUTH_USERNAME" in env:
-        config.web.basic_auth_username = _optional_string(env.get("BASIC_AUTH_USERNAME"))
+        config.web.basic_auth_username = _optional_string(
+            env.get("BASIC_AUTH_USERNAME")
+        )
     if "WEB_AUTH_USERNAME" in env:
         config.web.basic_auth_username = _optional_string(env.get("WEB_AUTH_USERNAME"))
     if "BASIC_AUTH_PASSWORD" in env:
-        config.web.basic_auth_password = _optional_string(env.get("BASIC_AUTH_PASSWORD"))
+        config.web.basic_auth_password = _optional_string(
+            env.get("BASIC_AUTH_PASSWORD")
+        )
     if "WEB_AUTH_PASSWORD" in env:
         config.web.basic_auth_password = _optional_string(env.get("WEB_AUTH_PASSWORD"))
 
@@ -702,7 +877,13 @@ def _optional_string(value: Any, *, allow_empty: bool = True) -> str | None:
     raise ConfigError(f"Expected string or null, received {type(value).__name__}")
 
 
-def _coerce_int(value: Any, field_name: str, *, default: int | None = None, min_value: int | None = None) -> int:
+def _coerce_int(
+    value: Any,
+    field_name: str,
+    *,
+    default: int | None = None,
+    min_value: int | None = None,
+) -> int:
     if value is None or value == "":
         if default is None:
             raise ConfigError(f"{field_name} is required")
@@ -722,7 +903,14 @@ def _coerce_int(value: Any, field_name: str, *, default: int | None = None, min_
     return number
 
 
-def _coerce_float(value: Any, field_name: str, *, default: float | None = None, min_value: float | None = None, max_value: float | None = None) -> float:
+def _coerce_float(
+    value: Any,
+    field_name: str,
+    *,
+    default: float | None = None,
+    min_value: float | None = None,
+    max_value: float | None = None,
+) -> float:
     """Coerce value to float with validation."""
     if value is None or value == "":
         if default is None:

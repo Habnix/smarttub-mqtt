@@ -8,12 +8,10 @@ import time
 # Get credentials from Docker container
 try:
     email = subprocess.check_output(
-        ['docker', 'exec', 'smarttub-mqtt', 'printenv', 'SMARTTUB_EMAIL'],
-        text=True
+        ["docker", "exec", "smarttub-mqtt", "printenv", "SMARTTUB_EMAIL"], text=True
     ).strip()
     password = subprocess.check_output(
-        ['docker', 'exec', 'smarttub-mqtt', 'printenv', 'SMARTTUB_PASSWORD'],
-        text=True
+        ["docker", "exec", "smarttub-mqtt", "printenv", "SMARTTUB_PASSWORD"], text=True
     ).strip()
 except Exception as e:
     print(f"❌ Error getting credentials: {e}")
@@ -25,26 +23,26 @@ print(f"Email: {email}")
 print()
 
 # Test parameters
-params = [
-    '--quick',
-    '--wait', '4.0',
-    '--verify', '5',
-    '--delay', '2.5'
-]
+params = ["--quick", "--wait", "4.0", "--verify", "5", "--delay", "2.5"]
 
 # Zone 1
 print("📍 Testing Zone 1 (Quick - 8 modes)...")
 print()
 result1 = subprocess.run(
     [
-        'python3', 'tests/test_light_modes.py',
-        '--email', email,
-        '--password', password,
-        '--zone', '1',
+        "python3",
+        "tests/test_light_modes.py",
+        "--email",
+        email,
+        "--password",
+        password,
+        "--zone",
+        "1",
         *params,
-        '--output', f'zone1_quick_{int(time.time())}.json'
+        "--output",
+        f"zone1_quick_{int(time.time())}.json",
     ],
-    cwd='/var/python/smarttub-mqtt'
+    cwd="/var/python/smarttub-mqtt",
 )
 
 print()
@@ -59,14 +57,19 @@ print("📍 Testing Zone 2 (Quick - 8 modes)...")
 print()
 result2 = subprocess.run(
     [
-        'python3', 'tests/test_light_modes.py',
-        '--email', email,
-        '--password', password,
-        '--zone', '2',
+        "python3",
+        "tests/test_light_modes.py",
+        "--email",
+        email,
+        "--password",
+        password,
+        "--zone",
+        "2",
         *params,
-        '--output', f'zone2_quick_{int(time.time())}.json'
+        "--output",
+        f"zone2_quick_{int(time.time())}.json",
     ],
-    cwd='/var/python/smarttub-mqtt'
+    cwd="/var/python/smarttub-mqtt",
 )
 
 print()
