@@ -150,7 +150,7 @@ discovered_items:
 
 ### Mode Detection
 Each light mode is published to MQTT:
-- **Topic**: `smarttub-mqtt/{spa_id}/light/{light_id}/meta/detected_modes`
+- **Topic**: `smarttub-mqtt/{spa_id}/lights/{light_id}/meta/detected_modes`
 - **Payload**: `OFF,ON,PURPLE,WHITE,HIGH_SPEED_COLOR_WHEEL`
 - **Retained**: Yes (QoS 1)
 

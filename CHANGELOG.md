@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **YAML Fallback Publisher** (`src/core/yaml_fallback.py`): Publish saved modes at startup
   - Automatically loads `discovered_items.yaml` on boot
   - Publishes `detected_modes` to MQTT for each light
-  - Topic: `{base}/{spa}/light/{light}/meta/detected_modes`
+  - Topic: `{base}/{spa}/lights/{light}/meta/detected_modes`
 - **Conditional Discovery** (`src/cli/run.py`): Startup automation via environment variable
   - `DISCOVERY_MODE=off` (default): Manual discovery only
   - `DISCOVERY_MODE=startup_quick`: Quick discovery on startup

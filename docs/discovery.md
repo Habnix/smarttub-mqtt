@@ -168,7 +168,7 @@ discovered_items:
 
 The detected modes are published to MQTT at startup and after discovery:
 
-**Topic**: `smarttub-mqtt/{spa_id}/light/{light_id}/meta/detected_modes`
+**Topic**: `smarttub-mqtt/{spa_id}/lights/{light_id}/meta/detected_modes`
 
 **Payload**: Comma-separated list of modes
 ```

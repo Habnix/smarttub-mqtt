@@ -138,7 +138,7 @@ class YAMLFallbackPublisher:
         try:
             # Build topic
             base_topic = self.topic_mapper.config.mqtt.base_topic
-            topic = f"{base_topic}/{spa_id}/light/{light_id}/meta/detected_modes"
+            topic = f"{base_topic}/{spa_id}/lights/{light_id}/meta/detected_modes"
             
             # Build payload (comma-separated list)
             payload = ",".join(detected_modes) if detected_modes else ""
