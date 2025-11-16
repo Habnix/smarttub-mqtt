@@ -65,13 +65,16 @@ def validate_environment() -> dict[str, str]:
         )
     
     # Validate paths
-    config_path = os.getenv("CONFIG_PATH", "/config/smarttub.yaml")
+    config_path = os.getenv("CONFIG_PATH") or os.getenv("CONFIG_FILE")
     log_dir = os.getenv("LOG_DIR", "/logs")  # Changed from /log to /logs to match docker-compose.yml
     
     logger.info(f"  ✓ SMARTTUB_EMAIL: {required_vars['SMARTTUB_EMAIL']}")
     logger.info(f"  ✓ SMARTTUB_PASSWORD/TOKEN: {'***' if password or token else 'NOT SET'}")
     logger.info(f"  ✓ MQTT_BROKER_URL: {required_vars['MQTT_BROKER_URL']}")
-    logger.info(f"  ✓ CONFIG_PATH: {config_path}")
+    if config_path:
+        logger.info(f"  ✓ CONFIG_PATH: {config_path}")
+    else:
+        logger.info(f"  ℹ No YAML config - using .env only")
     logger.info(f"  ✓ LOG_DIR: {log_dir}")
     
     return {
@@ -108,22 +111,24 @@ def validate_directories(env: dict[str, str]) -> None:
         raise EntrypointError(f"Cannot write to log directory {log_dir}: {e}")
     
     # Check config directory
-    config_path = Path(env["CONFIG_PATH"])
-    config_dir = config_path.parent
-    try:
-        config_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"  ✓ Config directory exists: {config_dir}")
-    except Exception as e:
-        raise EntrypointError(f"Cannot create config directory {config_dir}: {e}")
-    
-    # Check if config file exists (optional - will be created by discovery)
-    if config_path.exists():
-        logger.info(f"  ✓ Config file found: {config_path}")
-    else:
-        logger.info(f"  ℹ Config file will be created: {config_path}")
-        # Create minimal config file with dummy values (will be overridden by .env)
+    config_path_str = env.get("CONFIG_PATH")
+    if config_path_str:
+        config_path = Path(config_path_str)
+        config_dir = config_path.parent
         try:
-            minimal_config = """# Auto-generated minimal config (values overridden by .env)
+            config_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"  ✓ Config directory exists: {config_dir}")
+        except Exception as e:
+            raise EntrypointError(f"Cannot create config directory {config_dir}: {e}")
+        
+        # Check if config file exists (create minimal if not found)
+        if config_path.exists():
+            logger.info(f"  ✓ Config file found: {config_path}")
+        else:
+            logger.info(f"  ℹ Creating minimal YAML config: {config_path}")
+            # Create minimal config file with dummy values (will be overridden by .env)
+            try:
+                minimal_config = """# Auto-generated minimal config (values overridden by .env)
 smarttub:
   email: "will-be-overridden@example.com"
   password: "will-be-overridden"
@@ -138,11 +143,12 @@ web:
 logging:
   level: "info"
 """
-            config_path.write_text(minimal_config, encoding="utf-8")
-            logger.info(f"  ✓ Created minimal config file: {config_path}")
-        except Exception as e:
-            logger.warning(f"  ⚠ Could not create config file: {e} (will try to continue)")
-
+                config_path.write_text(minimal_config, encoding="utf-8")
+                logger.info(f"  ✓ Created minimal config file: {config_path}")
+            except Exception as e:
+                logger.warning(f"  ⚠ Could not create config file: {e} (will try to continue)")
+    else:
+        logger.info(f"  ℹ No YAML config file - using .env only")
 
 
 def setup_signal_handlers() -> None:

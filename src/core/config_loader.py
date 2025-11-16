@@ -381,7 +381,7 @@ class AppConfig:
 
 
 def load_config(path: Path | str | None = None) -> AppConfig:
-    """Load configuration from YAML, apply environment overrides, and validate."""
+    """Load configuration from YAML (optional) and .env, apply overrides, and validate."""
 
     # Load environment overrides from ./config/.env by default so the config
     # directory can be mounted into Docker. This ensures secrets (passwords,
@@ -393,15 +393,25 @@ def load_config(path: Path | str | None = None) -> AppConfig:
     except Exception:
         # Fallback to default behaviour if anything goes wrong
         load_dotenv()
+    
     config_path = _resolve_config_path(path)
 
-    try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:  # pragma: no cover - defensive branch
-        raise ConfigError(f"Failed to parse configuration file: {exc}") from exc
+    # If no YAML config, start with minimal defaults that will be overridden by .env
+    if config_path is None:
+        raw = {
+            "smarttub": {"email": "", "password": ""},
+            "mqtt": {"broker_url": "mqtt://localhost:1883"},
+            "web": {"host": "0.0.0.0", "port": 8080},
+            "logging": {"level": "info"}
+        }
+    else:
+        try:
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:  # pragma: no cover - defensive branch
+            raise ConfigError(f"Failed to parse configuration file: {exc}") from exc
 
-    if not isinstance(raw, MutableMapping):
-        raise ConfigError("Configuration root must be a mapping")
+        if not isinstance(raw, MutableMapping):
+            raise ConfigError("Configuration root must be a mapping")
 
     config = AppConfig.from_dict(raw)
     _apply_env_overrides(config, os.environ)
@@ -409,13 +419,16 @@ def load_config(path: Path | str | None = None) -> AppConfig:
     return config
 
 
-def _resolve_config_path(path: Path | str | None) -> Path:
+def _resolve_config_path(path: Path | str | None) -> Path | None:
+    """Resolve config path, returning None if no YAML config is needed."""
     if path is not None:
         candidate = Path(path)
     else:
         env_path = os.environ.get("SMARTTUB_CONFIG") or os.environ.get("CONFIG_FILE")
-        # Default to absolute /config/smarttub.yaml so Docker mounts to /config work
-        candidate = Path(env_path) if env_path else Path("/config") / "smarttub.yaml"
+        if not env_path:
+            # No config file specified - will use .env only
+            return None
+        candidate = Path(env_path)
 
     if not candidate.exists():
         raise FileNotFoundError(candidate)

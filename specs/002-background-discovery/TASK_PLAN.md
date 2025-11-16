@@ -1,4 +1,4 @@
-# Task Plan: Background Discovery (v0.3.0)
+    # Task Plan: Background Discovery (v0.3.0)
 
 **Ziel:** Discovery läuft parallel zum WebUI/MQTT als Hintergrund-Task mit Status-Tracking und WebUI-Integration
 
