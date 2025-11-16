@@ -203,7 +203,6 @@ class MQTTBrokerClient:
                     
                     # Find the most specific matching callback
                     # Sort by pattern specificity (more path parts = more specific)
-                    best_match = None
                     best_callback = None
                     best_specificity = -1
                     
@@ -212,7 +211,7 @@ class MQTTBrokerClient:
                             # Count non-wildcard parts as specificity score
                             specificity = sum(1 for part in pattern.split('/') if part not in ('+', '#'))
                             if specificity > best_specificity:
-                                best_match = pattern
+                                # Prefer more specific patterns
                                 best_callback = cb
                                 best_specificity = specificity
                     

@@ -8,7 +8,6 @@ import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, MagicMock
-from datetime import datetime
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -234,13 +233,13 @@ async def test_mode_configurations():
     
     # Check QUICK mode config
     quick_config = runner.mode_configs[DiscoveryMode.QUICK]
-    assert quick_config["test_modes"] == True
+    assert quick_config["test_modes"] is True
     assert len(quick_config["modes_to_test"]) == 4  # OFF, ON, PURPLE, WHITE
     print(f"✓ QUICK mode: {len(quick_config['modes_to_test'])} modes")
     
     # Check YAML_ONLY mode
     yaml_config = runner.mode_configs[DiscoveryMode.YAML_ONLY]
-    assert yaml_config["test_modes"] == False
+    assert yaml_config["test_modes"] is False
     print("✓ YAML_ONLY mode: no testing")
 
 

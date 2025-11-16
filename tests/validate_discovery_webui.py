@@ -112,7 +112,7 @@ async def test_discovery_status_endpoint():
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
     
     data = response.json()
-    assert data["success"] == True, "Should return success"
+    assert data["success"], "Should return success"
     assert "status" in data, "Should have status field"
     assert data["status"] == "idle", "Should start as idle"
     
@@ -151,7 +151,7 @@ async def test_start_discovery_endpoint():
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
     
     data = response.json()
-    assert data["success"] == True, "Should start successfully"
+    assert data["success"], "Should start successfully"
     assert data["mode"] == "yaml_only", "Mode should be yaml_only"
     
     print("✓ Start endpoint works")
@@ -266,7 +266,7 @@ async def test_reset_endpoint():
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
     
     data = response.json()
-    assert data["success"] == True, "Should reset successfully"
+    assert data["success"], "Should reset successfully"
     
     print("✓ Reset endpoint works")
     

@@ -542,7 +542,7 @@ class ItemProber:
                     is_online = getattr(status, 'online', None)
                     if is_online == "OFFLINE" or is_online is False:
                         logger.warning(f"⚠️  Spa {spa_id} is OFFLINE - skipping light mode discovery")
-                        return items
+                        return result
                     logger.info(f"✓ Spa {spa_id} is online (status: {is_online})")
                 except Exception as e:
                     logger.warning(f"⚠️  Could not verify spa online status: {e}")
@@ -847,19 +847,16 @@ class ItemProber:
             }
         }
         
-        # Capture original state to restore later
+        # Capture original state (not used for restoration due to API limitations)
         try:
-            orig_mode = getattr(light_obj, 'mode', None)
-            orig_intensity = getattr(light_obj, 'intensity', None)
-            # Handle both string and enum mode values
-            if hasattr(orig_mode, 'name'):
-                orig_mode_name = orig_mode.name
-            else:
-                orig_mode_name = str(orig_mode) if orig_mode else None
+            _ = getattr(light_obj, 'mode', None)
+            _ = getattr(light_obj, 'intensity', None)
+            # Note: We intentionally don't restore state because:
+            # 1. get_status_full() doesn't reliably return current state on 2020+ models
+            # 2. Setting modes may fail or timeout
+            # User can manually set desired state after discovery
         except Exception as e:
             logger.debug(f"Failed to capture original light state: {e}")
-            orig_mode_name = None
-            orig_intensity = 50
         
         # Optimized two-phase testing:
         # Phase 1: Test every mode at a canonical brightness to quickly filter supported modes.

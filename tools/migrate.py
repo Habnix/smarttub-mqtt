@@ -243,7 +243,7 @@ def main():
         env_vars = env_migrator.migrate_env(args.env)
         env_migrator.validate_env(env_vars)
         
-        print(f"  ✅ Environment variables validated")
+        print("  ✅ Environment variables validated")
     else:
         report.add_warning(f".env file not found: {args.env}")
     

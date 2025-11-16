@@ -62,7 +62,7 @@ async def test_basic_functionality():
     )
     state = await manager.get_state()
     assert state.progress.percentage == 50.0, "Progress should be 50%"
-    print(f"✓ Progress update works (50.0%)")
+    print("✓ Progress update works (50.0%)")
     
     # Test observer
     notifications = []

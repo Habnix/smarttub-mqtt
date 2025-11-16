@@ -101,7 +101,7 @@ async def test_yaml_fallback_publishing():
         # Publish from YAML
         result = await publisher.publish_from_yaml(yaml_path=temp_path)
         
-        assert result == True, "Should publish successfully"
+        assert result, "Should publish successfully"
         print("✓ Publishing returned success")
         
         # Check published messages
@@ -135,7 +135,7 @@ async def test_yaml_fallback_publishing():
         
         # Check retain flag
         for msg in messages:
-            assert msg["retain"] == True, "Messages should be retained"
+            assert msg["retain"], "Messages should be retained"
         
         print("✓ Messages retained")
     
@@ -157,7 +157,7 @@ async def test_yaml_not_found():
     # Try to publish from non-existent file
     result = await publisher.publish_from_yaml(yaml_path=Path("/nonexistent/file.yaml"))
     
-    assert result == False, "Should return False for missing file"
+    assert not result, "Should return False for missing file"
     print("✓ Returns False for missing file")
     
     # Should not publish anything
@@ -184,7 +184,7 @@ async def test_invalid_yaml():
         # Try to publish from invalid YAML
         result = await publisher.publish_from_yaml(yaml_path=temp_path)
         
-        assert result == False, "Should return False for invalid YAML"
+        assert not result, "Should return False for invalid YAML"
         print("✓ Returns False for invalid YAML structure")
         
         # Should not publish anything
@@ -229,7 +229,7 @@ async def test_empty_detected_modes():
         # Publish
         result = await publisher.publish_from_yaml(yaml_path=temp_path)
         
-        assert result == True, "Should still publish"
+        assert result, "Should still publish"
         print("✓ Publishing succeeds with empty modes")
         
         # Should publish empty payload

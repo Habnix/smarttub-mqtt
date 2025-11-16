@@ -690,10 +690,10 @@ class SmartTubClient:
             logger.warning(f"Light not found: zone={zone}")
             return
 
-        current_mode = target_light.get('mode', 'UNKNOWN')
+        current_mode_name = target_light.get('mode', 'UNKNOWN')
         
         # For FULL_DYNAMIC_RGB: Use RGB-based brightness control with hardware calibration
-        if current_mode == "FULL_DYNAMIC_RGB":
+        if current_mode_name == "FULL_DYNAMIC_RGB":
             color_obj = target_light.get('color', {})
             current_r = color_obj.get('red', 0)
             current_g = color_obj.get('green', 0)
@@ -742,10 +742,10 @@ class SmartTubClient:
             # For other modes: Use direct API call (intensity field is unreliable but no alternative)
             try:
                 await spa.request("PATCH", f"lights/{zone}", {
-                    "mode": mode_name,
+                    "mode": current_mode_name,
                     "intensity": brightness
                 })
-                logger.info(f"Set light zone {zone} brightness to {brightness}% via intensity field (mode={mode_name}, unreliable)")
+                logger.info(f"Set light zone {zone} brightness to {brightness}% via intensity field (mode={current_mode_name}, unreliable)")
             except Exception as e:
                 logger.error(f"Failed to set brightness for zone {zone}: {e}")
 

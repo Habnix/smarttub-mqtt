@@ -36,7 +36,6 @@ class CommandManager:
         - mode_writetopic instead of heater/set_mode
         - state_writetopic instead of pumps/set_state etc.
         """
-        base_topic = self.config.mqtt.base_topic
         # Register handlers by command path (spa-specific subscription will
         # be applied in `subscribe_commands`). This keeps handlers independent
         # of the spa id and allows subscribing with a wildcard (+/) to catch

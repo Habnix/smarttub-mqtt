@@ -5,9 +5,8 @@ import logging
 from pathlib import Path
 from typing import Any, List
 
-from src.core.config_loader import AppConfig
-import logging
 import yaml
+from src.core.config_loader import AppConfig
 
 logger = logging.getLogger("smarttub.mqtt.mapper")
 
