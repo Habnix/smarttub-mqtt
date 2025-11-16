@@ -51,7 +51,9 @@
             </a>
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="/">Overview</a>
-                <a class="nav-link active" href="/controls">Controls</a>
+                <a class="nav-link active" href="/controls">
+                    Controls <span class="badge bg-warning text-dark">BETA</span>
+                </a>
                 <a class="nav-link" href="/discovery">Discovery</a>
                 <a class="nav-link" href="/api/state" target="_blank">API</a>
             </div>
@@ -59,6 +61,33 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- Beta Warning Banner -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="alert alert-warning border-warning" role="alert">
+                    <h5 class="alert-heading">
+                        <i class="fas fa-flask me-2"></i>
+                        <strong>BETA FEATURE</strong>
+                    </h5>
+                    <p class="mb-2">
+                        This control panel is currently in <strong>beta</strong> and has known limitations:
+                    </p>
+                    <ul class="mb-2">
+                        <li>Temperature control uses hardcoded default (37°C) instead of current target temperature</li>
+                        <li>Only circulation pump (CP) is shown - jet pumps (P1, P2) are not yet available</li>
+                        <li>Light controls are not yet implemented</li>
+                        <li>Heating mode changes may not work correctly</li>
+                        <li>Real-time state updates are not yet integrated</li>
+                    </ul>
+                    <p class="mb-0">
+                        <strong>Recommended:</strong> Use MQTT topics directly for reliable control until this feature is complete.
+                        <br>
+                        <small class="text-muted">Planned for v0.3.1 - Full state integration and working controls</small>
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <div class="row">
             <div class="col-12">
                 <h1 class="mb-4">SmartTub Control Panel</h1>
