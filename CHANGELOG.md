@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-11-16
+
+### Fixed
+- **CI Pipeline**: Added `[project.optional-dependencies]` section to `pyproject.toml`
+  - Includes all dev dependencies (pytest, ruff, mypy, safety, bandit)
+  - Fixed "collected 0 items" error in GitHub Actions
+  - Updated CI workflow to use `pip install -e .[dev]`
+- **Code Formatting**: Applied Ruff formatting to entire codebase (31 files)
+  - Consistent code style across all Python files
+  - No functional changes, only whitespace/formatting
+
+### Changed
+- Bumped version to 0.3.2 in pyproject.toml, Dockerfile, and version.py
+
+## [0.3.1] - 2025-11-16
+
+### Fixed
+- **Discovery OFF Mode**: Critical bugfix for OFF mode testing
+  - Fixed `AssertionError` when testing OFF mode (intensity must be 0, not 50)
+  - Added conditional intensity: 0 for OFF mode, 50 for all other modes
+- **YAML Data Preservation**: Fixed discovered_items.yaml overwriting device data
+  - Discovery now merges detected_modes instead of replacing entire structure
+  - Preserves pumps, heater, and spa metadata across discovery runs
+- **Discovery Retry Mechanism**: Added 3-attempt retry loop for slow SmartTub API
+  - Progressive delays: 20s, 25s, 30s between verification attempts
+  - Improves reliability for slow API responses
+- **Light Modes List**: Updated WebUI with official python-smarttub modes
+  - Replaced deprecated modes (HIGH, BLUE_GREEN, ROTARY, etc.)
+  - Now tests 18 official modes from python-smarttub library
+
 ## [0.3.0] - 2025-11-09
 
 ### Added - Background Discovery System
