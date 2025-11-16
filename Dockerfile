@@ -85,7 +85,6 @@ VOLUME ["/config", "/log"]
 # Environment defaults
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    CONFIG_PATH=/config/smarttub.yaml \
     LOG_DIR=/log
 
 # Expose Web UI port (default: 8080)

@@ -580,7 +580,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     except Exception as exc:  # pragma: no cover - defensive
+        import traceback
         print(f"Unexpected error: {exc}", file=sys.stderr)
+        traceback.print_exc()
         return 2
 
 

@@ -396,22 +396,27 @@ def load_config(path: Path | str | None = None) -> AppConfig:
     
     config_path = _resolve_config_path(path)
 
-    # If no YAML config, start with minimal defaults that will be overridden by .env
+    # If no YAML config, build config directly from env vars
     if config_path is None:
-        raw = {
-            "smarttub": {"email": "", "password": ""},
-            "mqtt": {"broker_url": "mqtt://localhost:1883"},
-            "web": {"host": "0.0.0.0", "port": 8080},
-            "logging": {"level": "info"}
-        }
-    else:
-        try:
-            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError as exc:  # pragma: no cover - defensive branch
-            raise ConfigError(f"Failed to parse configuration file: {exc}") from exc
+        # Create empty config structure - will be populated by env overrides
+        config = AppConfig(
+            smarttub=SmartTubConfig(email="", password=None, device_id=None, token=None),
+            mqtt=MQTTConfig(broker_url="mqtt://localhost:1883"),
+            web=WebConfig(host="0.0.0.0", port=8080),
+            logging=LoggingConfig(level="info")
+        )
+        _apply_env_overrides(config, os.environ)
+        config.validate()
+        return config
 
-        if not isinstance(raw, MutableMapping):
-            raise ConfigError("Configuration root must be a mapping")
+    # YAML config exists - load and validate it
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:  # pragma: no cover - defensive branch
+        raise ConfigError(f"Failed to parse configuration file: {exc}") from exc
+
+    if not isinstance(raw, MutableMapping):
+        raise ConfigError("Configuration root must be a mapping")
 
     config = AppConfig.from_dict(raw)
     _apply_env_overrides(config, os.environ)
