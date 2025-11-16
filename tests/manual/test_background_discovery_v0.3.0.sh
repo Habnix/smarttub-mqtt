@@ -335,14 +335,6 @@ test_mqtt_topics() {
         return
     fi
     
-    print_test "Subscribe to discovery status topic"
-    print_info "Subscribing to: $MQTT_BASE_TOPIC/discovery/status"
-    print_info "This will timeout after 10s if no messages..."
-    
-    timeout 10s mosquitto_sub -h "$MQTT_BROKER" -p "$MQTT_PORT" \
-        -t "$MQTT_BASE_TOPIC/discovery/status" \
-        -C 1 -v 2>/dev/null || true
-    
     print_test "Start discovery via MQTT command"
     mosquitto_pub -h "$MQTT_BROKER" -p "$MQTT_PORT" \
         -t "$MQTT_BASE_TOPIC/discovery/control" \
@@ -350,14 +342,18 @@ test_mqtt_topics() {
     
     if [ $? -eq 0 ]; then
         print_success "MQTT command published"
-        sleep 3
+        sleep 4
         
-        # Check if discovery started
+        # Check if discovery started (yaml_only is instant, should be completed)
         STATUS=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
-        if [ "$STATUS" = "running" ] || [ "$STATUS" = "completed" ]; then
-            print_success "Discovery started via MQTT (status: $STATUS)"
+        MODE=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"mode":"[^"]*"' | cut -d'"' -f4)
+        
+        if [ "$STATUS" = "completed" ] && [ "$MODE" = "yaml_only" ]; then
+            print_success "Discovery completed via MQTT (status: $STATUS, mode: $MODE)"
+        elif [ "$STATUS" = "running" ]; then
+            print_success "Discovery running via MQTT (status: $STATUS)"
         else
-            print_error "Discovery not started via MQTT (status: $STATUS)"
+            print_error "Discovery not started via MQTT (status: $STATUS, mode: $MODE)"
         fi
     else
         print_error "MQTT command publish failed"
@@ -438,27 +434,30 @@ test_startup_modes() {
 test_concurrent_operations() {
     print_header "Testing Concurrent Operation Prevention"
     
-    print_test "Start first discovery"
+    print_test "Start first discovery (quick mode)"
     curl -s -X POST "$WEB_URL/api/discovery/start" \
         -H "Content-Type: application/json" \
         -d '{"mode":"quick"}' > /dev/null
     
-    sleep 1
+    # Wait only 0.3s - quick discovery completes very fast with few lights
+    sleep 0.3
     
     print_test "Try to start second discovery (should fail)"
     RESPONSE=$(curl -s -X POST "$WEB_URL/api/discovery/start" \
         -H "Content-Type: application/json" \
         -d '{"mode":"quick"}')
     
-    if echo "$RESPONSE" | grep -qi "already\|running"; then
+    # Check for "already running" or "already" in response
+    if echo "$RESPONSE" | grep -qi "already"; then
         print_success "Concurrent start prevented"
     else
         print_error "Concurrent start not prevented"
         echo "$RESPONSE"
     fi
     
-    # Cleanup
-    curl -s -X POST "$WEB_URL/api/discovery/stop" > /dev/null
+    # Cleanup - stop any running discovery
+    curl -s -X POST "$WEB_URL/api/discovery/stop" > /dev/null 2>&1 || true
+    sleep 1
 }
 
 print_summary() {
