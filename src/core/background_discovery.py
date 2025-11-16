@@ -78,12 +78,12 @@ class BackgroundDiscoveryRunner:
             DiscoveryMode.FULL: {
                 "test_modes": True,
                 "modes_to_test": "all",  # Test all 18 modes
-                "wait_time": 20,  # Wait 20s per mode
+                "wait_time": 20,  # Extra wait after timeout (SmartTub Cloud API is VERY slow)
             },
             DiscoveryMode.QUICK: {
                 "test_modes": True,
                 "modes_to_test": ["OFF", "ON", "PURPLE", "WHITE"],  # Test 4 modes
-                "wait_time": 8,  # Wait 8s per mode
+                "wait_time": 20,  # Extra wait after timeout
             },
             DiscoveryMode.YAML_ONLY: {
                 "test_modes": False,
@@ -292,8 +292,11 @@ class BackgroundDiscoveryRunner:
                     # Test modes if enabled
                     if mode_config["test_modes"]:
                         logger.info(f"Testing {len(modes_to_test)} modes for {light_id}")
+                        logger.info(f"Modes to test: {modes_to_test[:3]}...")  # DEBUG: Show first 3 modes
                         
                         for mode_name in modes_to_test:
+                            logger.info(f"Testing mode {mode_name} on {light_id}")  # DEBUG
+                            
                             # Check stop signal
                             if self._stop_event.is_set():
                                 logger.info("Stop signal received, aborting discovery")
@@ -309,6 +312,8 @@ class BackgroundDiscoveryRunner:
                             if success:
                                 light_results["detected_modes"].append(mode_name)
                                 logger.debug(f"Mode {mode_name} works for {light_id}")
+                            else:
+                                logger.info(f"Mode {mode_name} failed for {light_id}")  # DEBUG
                             
                             # Update progress
                             state = await self.state_manager.get_state()
@@ -371,10 +376,15 @@ class BackgroundDiscoveryRunner:
         """
         Test a single light mode.
         
+        Uses the proven v0.2.3 approach:
+        1. Try light.set_mode() (has built-in 10s wait)
+        2. If timeout: wait extra time and verify manually
+        3. Check mode matches (ignore intensity)
+        
         Args:
             light: Light object
             mode_name: Mode name to test
-            wait_time: Wait time in seconds
+            wait_time: Extra wait time if set_mode times out
         
         Returns:
             True if mode works, False otherwise
@@ -390,18 +400,63 @@ class BackgroundDiscoveryRunner:
                 logger.warning(f"Unknown mode: {mode_name}")
                 return False
             
-            # Try to set mode
-            await light.set_mode(mode)
-            
-            # Wait for confirmation
-            await asyncio.sleep(wait_time)
-            
-            # Check if mode was set (get status)
-            # Note: We consider it successful if no exception was raised
-            return True
+            # Try using light.set_mode() (includes built-in state verification)
+            try:
+                logger.info(f"Calling set_mode({mode_name}, 50)...")
+                await light.set_mode(mode, intensity=50)
+                # Success - mode was set and verified
+                logger.info(f"Mode {mode_name} verified by set_mode()")
+                return True
+                
+            except Exception as e:
+                error_str = str(e)
+                logger.info(f"set_mode() raised: {error_str[:100]}")
+                
+                # Check for API rejection (invalid mode)
+                if "400" in error_str or "404" in error_str:
+                    logger.debug(f"API rejected mode {mode_name}: {e}")
+                    return False
+                
+                # State change timeout - common for slow API
+                # Solution: Wait extra time and verify manually
+                if "State change not reflected" in error_str or "timeout" in error_str.lower():
+                    logger.info(f"Mode {mode_name} timed out - verifying manually after {wait_time}s...")
+                    
+                    # Wait extra time for slow API
+                    await asyncio.sleep(wait_time)
+                    
+                    try:
+                        # Refresh spa status to get current light state
+                        status = await light.spa.get_status_full()
+                        logger.info(f"Got status, checking {len(status.lights)} lights...")
+                        
+                        # Find our light in the status
+                        for status_light in status.lights:
+                            if status_light.zone == light.zone:
+                                current_mode = status_light.mode
+                                logger.info(f"Light zone {light.zone}: Expected={mode_name}, Got={current_mode.name if current_mode else 'None'}")
+                                
+                                if current_mode and current_mode.name == mode_name:
+                                    logger.info(f"Mode {mode_name} verified manually after timeout")
+                                    return True
+                                else:
+                                    current = current_mode.name if current_mode else "None"
+                                    logger.debug(f"Mode verification failed: expected {mode_name}, got {current}")
+                                    return False
+                        
+                        logger.warning(f"Light zone {light.zone} not found in status")
+                        return False
+                            
+                    except Exception as verify_error:
+                        logger.error(f"Manual verification exception: {verify_error}")
+                        return False
+                
+                # Other errors
+                logger.error(f"Mode {mode_name} failed: {e}")
+                return False
         
         except Exception as e:
-            logger.debug(f"Mode {mode_name} failed: {e}")
+            logger.error(f"Mode {mode_name} test exception: {e}")
             return False
     
     async def _save_results_to_yaml(
