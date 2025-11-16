@@ -22,9 +22,21 @@ NC='\033[0m' # No Color
 # Configuration
 CONTAINER_NAME="smarttub-mqtt"
 WEB_URL="http://localhost:8080"
-MQTT_BROKER="${MQTT_BROKER:-192.168.178.164}"  # Use actual broker IP
-MQTT_PORT="${MQTT_PORT:-1883}"
-MQTT_BASE_TOPIC="${MQTT_BASE_TOPIC:-smarttub-mqtt2}"  # Match configured topic
+
+# Read MQTT config from running container
+if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+    MQTT_BROKER_URL=$(docker exec "$CONTAINER_NAME" env | grep "^MQTT_BROKER_URL=" | cut -d'=' -f2)
+    MQTT_BASE_TOPIC=$(docker exec "$CONTAINER_NAME" env | grep "^MQTT_BASE_TOPIC=" | cut -d'=' -f2)
+    
+    # Extract host and port from MQTT_BROKER_URL (format: mqtt://host:port)
+    MQTT_BROKER=$(echo "$MQTT_BROKER_URL" | sed -E 's|mqtt://([^:]+):.*|\1|')
+    MQTT_PORT=$(echo "$MQTT_BROKER_URL" | sed -E 's|mqtt://[^:]+:([0-9]+)|\1|')
+else
+    # Fallback values if container not running
+    MQTT_BROKER="${MQTT_BROKER:-192.168.178.164}"
+    MQTT_PORT="${MQTT_PORT:-1883}"
+    MQTT_BASE_TOPIC="${MQTT_BASE_TOPIC:-smarttub-mqtt2}"
+fi
 
 # Test counters
 TESTS_PASSED=0
@@ -45,12 +57,17 @@ print_test() {
 
 print_success() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
-    echo -e "${GREEN}✓${NC} $1"
+    echo -e "  ${GREEN}✓${NC} $1"
+}
+
+print_info_success() {
+    # Success message without incrementing test counter
+    echo -e "  ${GREEN}✓${NC} $1"
 }
 
 print_error() {
     TESTS_FAILED=$((TESTS_FAILED + 1))
-    echo -e "${RED}✗${NC} $1"
+    echo -e "  ${RED}✗${NC} $1"
 }
 
 print_info() {
@@ -65,25 +82,25 @@ check_prerequisites() {
         print_error "Docker not found. Please install Docker."
         exit 1
     fi
-    print_success "Docker installed"
+    print_info_success "Docker installed"
     
     # Check if docker-compose is installed
     if ! command -v docker-compose &> /dev/null; then
         print_error "docker-compose not found. Please install docker-compose."
         exit 1
     fi
-    print_success "docker-compose installed"
+    print_info_success "docker-compose installed"
     
     # Check if curl is installed
     if ! command -v curl &> /dev/null; then
         print_error "curl not found. Please install curl."
         exit 1
     fi
-    print_success "curl installed"
+    print_info_success "curl installed"
     
     # Check if mosquitto_pub is installed (optional)
     if command -v mosquitto_pub &> /dev/null; then
-        print_success "mosquitto_pub installed (MQTT tests enabled)"
+        print_info_success "mosquitto_pub installed (MQTT tests enabled)"
         MQTT_TESTS_ENABLED=true
     else
         print_info "mosquitto_pub not found (MQTT command tests will be skipped)"
@@ -92,7 +109,7 @@ check_prerequisites() {
     
     # Check if jq is installed (optional but recommended)
     if command -v jq &> /dev/null; then
-        print_success "jq installed (JSON parsing enabled)"
+        print_info_success "jq installed (JSON parsing enabled)"
         JQ_ENABLED=true
     else
         print_info "jq not found (install for better JSON output)"
@@ -102,6 +119,12 @@ check_prerequisites() {
 
 check_container() {
     print_header "Checking Container Status"
+    
+    # Show MQTT configuration being used
+    if [ -n "$MQTT_BROKER" ] && [ -n "$MQTT_BASE_TOPIC" ]; then
+        print_info "MQTT Broker: $MQTT_BROKER:$MQTT_PORT"
+        print_info "MQTT Topic: $MQTT_BASE_TOPIC"
+    fi
     
     print_test "Container running?"
     if docker ps | grep -q "$CONTAINER_NAME"; then
