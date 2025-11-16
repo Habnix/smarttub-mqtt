@@ -22,9 +22,9 @@ NC='\033[0m' # No Color
 # Configuration
 CONTAINER_NAME="smarttub-mqtt"
 WEB_URL="http://localhost:8080"
-MQTT_BROKER="${MQTT_BROKER:-localhost}"
+MQTT_BROKER="${MQTT_BROKER:-192.168.178.164}"  # Use actual broker IP
 MQTT_PORT="${MQTT_PORT:-1883}"
-MQTT_BASE_TOPIC="${MQTT_BASE_TOPIC:-smarttub-mqtt}"
+MQTT_BASE_TOPIC="${MQTT_BASE_TOPIC:-smarttub-mqtt2}"  # Match configured topic
 
 # Test counters
 TESTS_PASSED=0
@@ -347,6 +347,9 @@ test_mqtt_topics() {
         sleep 3
     fi
     
+    # Get current completed_at timestamp (will be null if idle)
+    BEFORE_TS=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"completed_at":"[^"]*"' | cut -d'"' -f4)
+    
     print_test "Start discovery via MQTT command"
     mosquitto_pub -h "$MQTT_BROKER" -p "$MQTT_PORT" \
         -t "$MQTT_BASE_TOPIC/discovery/control" \
@@ -354,18 +357,21 @@ test_mqtt_topics() {
     
     if [ $? -eq 0 ]; then
         print_success "MQTT command published"
-        sleep 5
+        sleep 1
         
-        # Check if discovery started (yaml_only is instant, should be completed)
-        STATUS=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
-        MODE=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"mode":"[^"]*"' | cut -d'"' -f4)
+        # Get new status - yaml_only completes instantly
+        AFTER_STATUS=$(curl -s "$WEB_URL/api/discovery/status")
+        STATUS=$(echo "$AFTER_STATUS" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+        MODE=$(echo "$AFTER_STATUS" | grep -o '"mode":"[^"]*"' | cut -d'"' -f4)
+        AFTER_TS=$(echo "$AFTER_STATUS" | grep -o '"completed_at":"[^"]*"' | cut -d'"' -f4)
         
-        if [ "$STATUS" = "completed" ] && [ "$MODE" = "yaml_only" ]; then
-            print_success "Discovery completed via MQTT (status: $STATUS, mode: $MODE)"
+        # Check if discovery ran by comparing timestamps
+        if [ "$STATUS" = "completed" ] && [ "$MODE" = "yaml_only" ] && [ "$AFTER_TS" != "$BEFORE_TS" ]; then
+            print_success "Discovery completed via MQTT (mode: $MODE, new timestamp)"
         elif [ "$STATUS" = "running" ]; then
             print_success "Discovery running via MQTT (status: $STATUS)"
         else
-            print_error "Discovery not started via MQTT (status: $STATUS, mode: $MODE)"
+            print_error "Discovery not started via MQTT (status: $STATUS, mode: $MODE, ts unchanged: $BEFORE_TS)"
         fi
     else
         print_error "MQTT command publish failed"
