@@ -454,26 +454,26 @@ class ItemProber:
             raw_light_objects = None
             if lights and isinstance(lights, dict) and 'lights' in lights:
                 raw_light_objects = lights.get('lights', [])
-                for l in raw_light_objects:
-                    # l may be a dict or a SpaLight object
-                    if isinstance(l, dict):
-                        lid = l.get('id') or f"zone_{l.get('zone')}"
-                        zone = l.get('zone')
-                        color = l.get('color')
+                for light_obj in raw_light_objects:
+                    # light_obj may be a dict or a SpaLight object
+                    if isinstance(light_obj, dict):
+                        lid = light_obj.get('id') or f"zone_{light_obj.get('zone')}"
+                        zone = light_obj.get('zone')
+                        color = light_obj.get('color')
                         supports = {
                             'color': bool(color),
-                            'brightness': 'intensity' in l or 'brightness' in l,
+                            'brightness': 'intensity' in light_obj or 'brightness' in light_obj,
                         }
-                        raw = self._make_serializable(l)
+                        raw = self._make_serializable(light_obj)
                     else:
-                        lid = getattr(l, 'id', None) or f"zone_{getattr(l, 'zone', 'unknown')}"
-                        zone = getattr(l, 'zone', None)
-                        color = getattr(l, 'color', None)
+                        lid = getattr(light_obj, 'id', None) or f"zone_{getattr(light_obj, 'zone', 'unknown')}"
+                        zone = getattr(light_obj, 'zone', None)
+                        color = getattr(light_obj, 'color', None)
                         supports = {
-                            'color': getattr(l, 'color', None) is not None,
-                            'brightness': hasattr(l, 'intensity') or hasattr(l, 'brightness'),
+                            'color': getattr(light_obj, 'color', None) is not None,
+                            'brightness': hasattr(light_obj, 'intensity') or hasattr(light_obj, 'brightness'),
                         }
-                        raw = self._make_serializable(l)
+                        raw = self._make_serializable(light_obj)
 
                     # Ensure per-light raw doesn't duplicate spa metadata
                     if isinstance(raw, dict) and 'spa' in raw:
@@ -489,14 +489,14 @@ class ItemProber:
             else:
                 if isinstance(lights, list):
                     raw_light_objects = lights
-                    for l in raw_light_objects:
+                    for light_item in raw_light_objects:
                         # Compute lid with fallback to zone_X if id is None
-                        if isinstance(l, dict):
-                            lid = l.get('id') or f"zone_{l.get('zone')}"
+                        if isinstance(light_item, dict):
+                            lid = light_item.get('id') or f"zone_{light_item.get('zone')}"
                         else:
-                            lid = getattr(l, 'id', None) or f"zone_{getattr(l, 'zone', 'unknown')}"
+                            lid = getattr(light_item, 'id', None) or f"zone_{getattr(light_item, 'zone', 'unknown')}"
                         
-                        raw_serialized = self._make_serializable(l)
+                        raw_serialized = self._make_serializable(light_item)
                         if isinstance(raw_serialized, dict) and 'spa' in raw_serialized:
                             raw_serialized.pop('spa', None)
                         
@@ -566,7 +566,7 @@ class ItemProber:
                 async def turn_off_zone(zone_num):
                     try:
                         # Try using light object's turn_off() method first
-                        light_to_turn_off = next((l for l in light_objs if getattr(l, 'zone', None) == zone_num), None)
+                        light_to_turn_off = next((light for light in light_objs if getattr(light, 'zone', None) == zone_num), None)
                         if light_to_turn_off:
                             try:
                                 await light_to_turn_off.turn_off()
@@ -935,13 +935,13 @@ class ItemProber:
                             lights = await spa.get_lights()
                             if lights:
                                 # get_lights() returns a list directly
-                                for l in lights:
-                                    if getattr(l, 'zone', None) == zone:
+                                for light in lights:
+                                    if getattr(light, 'zone', None) == zone:
                                         mode_results["rgb"] = {
-                                            "red": getattr(l, 'red', 0),
-                                            "green": getattr(l, 'green', 0),
-                                            "blue": getattr(l, 'blue', 0),
-                                            "white": getattr(l, 'white', 0),
+                                            "red": getattr(light, 'red', 0),
+                                            "green": getattr(light, 'green', 0),
+                                            "blue": getattr(light, 'blue', 0),
+                                            "white": getattr(light, 'white', 0),
                                         }
                                         break
                         except Exception:
@@ -1254,17 +1254,17 @@ class ItemProber:
                     return False
                     
                 # Find our zone in the results
-                for l in lights:
-                    if getattr(l, 'zone', None) == zone:
+                for light in lights:
+                    if getattr(light, 'zone', None) == zone:
                         # Check if mode matches
-                        current_mode = getattr(l, 'mode', None)
+                        current_mode = getattr(light, 'mode', None)
                         # Handle both string and enum mode values
                         if hasattr(current_mode, 'name'):
                             current_mode_name = current_mode.name
                         else:
                             current_mode_name = str(current_mode) if current_mode else None
                         
-                        current_intensity = getattr(l, 'intensity', None)
+                        current_intensity = getattr(light, 'intensity', None)
                         
                         # Verify mode matches
                         if mode_name == "OFF":

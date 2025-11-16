@@ -438,7 +438,7 @@ class SmartTubClient:
                 # Get current light state to check zone type
                 lights_response = await spa.request("GET", "lights")
                 lights_data = lights_response.get('lights', [])
-                current_light = next((l for l in lights_data if l.get('zone') == target_light.zone), None)
+                current_light = next((light for light in lights_data if light.get('zone') == target_light.zone), None)
                 
                 logger.debug(f"Light ON: target_light.zone={target_light.zone}, current_light={current_light}")
                 
