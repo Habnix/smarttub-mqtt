@@ -201,9 +201,8 @@ class BackgroundDiscoveryRunner:
             # Get mode configuration
             mode_config = self.mode_configs[mode]
             
-            # Load account and spas
-            account = await self.smarttub_client.get_account()
-            spas = await account.get_spas()
+            # Load spas from client
+            spas = self.smarttub_client.spas
             
             if not spas:
                 raise Exception("No spas found in account")
