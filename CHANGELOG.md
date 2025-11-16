@@ -97,6 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker Healthcheck**: Changed from curl to Python urllib for slim image compatibility
 - **Exception Handler** (`src/cli/run.py`): Fixed indentation in exception handler
 - **SmartTub API Access** (`src/core/background_discovery.py`): Use `spas` property instead of non-existent `get_account()` method
+- **MQTT Discovery Control** (`src/mqtt/discovery_handler.py`): 
+  - Handle both bytes and str payload types
+  - Use `asyncio.run_coroutine_threadsafe()` with event loop for thread-safe async execution
+  - Fixes "no event loop in thread" error from MQTT callbacks
+- **Concurrent Start Prevention** (`src/core/background_discovery.py`): Added `_start_lock` to prevent race conditions
 
 ### Technical Details
 - **Discovery Modes**:

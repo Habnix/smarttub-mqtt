@@ -207,6 +207,8 @@ Follow the [Quick Start](https://github.com/Habnix/smarttub-mqtt#quick-start-doc
 - **LOG_DIR**: Aligned Docker default to `/logs` (was `/var/log/smarttub-mqtt`)
 - **Exception Handler**: Fixed indentation in `run.py`
 - **SmartTubClient API**: Fixed discovery to use `spas` property instead of non-existent `get_account()` method
+- **MQTT Discovery Control**: Fixed event loop handling for thread-safe async execution from MQTT callbacks
+- **Concurrent Start Prevention**: Added lock to prevent race conditions when multiple discovery requests arrive simultaneously
 
 ## 📚 Documentation
 
