@@ -128,13 +128,13 @@ docker run -d \
   --name smarttub-mqtt \
   --restart unless-stopped \
   -v /opt/smarttub-mqtt/config:/config \
-  -p 8000:8000 \
+  -p 8000:8080 \
   willnix/smarttub-mqtt:latest
 ```
 
 3. Access WebUI
 
-Visit `http://<your-ip>:8000` for the dashboard and discovery page.
+Visit `http://<your-ip>:8080` for the dashboard and discovery page.
 
 ---
 
@@ -228,7 +228,7 @@ SmartTub-MQTT can automatically test which light modes your spa supports.
 ### Quick Start
 
 **Via WebUI**:
-1. Visit `http://<your-ip>:8000/discovery`
+1. Visit `http://<your-ip>:8080/discovery`
 2. Select a mode (Quick recommended)
 3. Click "Start Discovery"
 

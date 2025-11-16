@@ -38,7 +38,7 @@ SmartTub-MQTT v0.3.0 introduces **Background Discovery** - an automated system t
 ### Via WebUI
 
 1. **Access Discovery Page**
-   - Navigate to `http://<your-ip>:8000/discovery`
+   - Navigate to `http://<your-ip>:8080/discovery`
    - Or click "Discovery" in the navigation bar
 
 2. **Select Mode**

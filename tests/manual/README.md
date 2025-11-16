@@ -49,7 +49,7 @@ The script uses environment variables for configuration:
 export MQTT_BROKER=localhost
 export MQTT_PORT=1883
 export MQTT_BASE_TOPIC=smarttub-mqtt
-export WEB_URL=http://localhost:8000
+export WEB_URL=http://localhost:8080
 
 # Then run
 ./tests/manual/test_background_discovery_v0.3.0.sh
@@ -104,7 +104,7 @@ Checking Container Status
 ✓ Container health: healthy
 
 [TEST 3] WebUI accessible?
-✓ WebUI accessible at http://localhost:8000
+✓ WebUI accessible at http://localhost:8080
 
 ...
 
@@ -187,7 +187,7 @@ apk add mosquitto-clients
 docker exec smarttub-mqtt ls -la /config/discovered_items.yaml
 
 # Run a discovery first
-curl -X POST http://localhost:8000/api/discovery/start \
+curl -X POST http://localhost:8080/api/discovery/start \
   -H "Content-Type: application/json" \
   -d '{"mode":"quick"}'
 ```
@@ -198,7 +198,7 @@ Use this checklist to manually verify features:
 
 ### WebUI Testing
 
-- [ ] Visit `http://localhost:8000/discovery`
+- [ ] Visit `http://localhost:8080/discovery`
 - [ ] Page loads without errors
 - [ ] Mode selection cards visible (YAML Only, Quick, Full)
 - [ ] Click "YAML Only" → "Start Discovery"

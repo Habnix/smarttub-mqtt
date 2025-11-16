@@ -21,7 +21,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 CONTAINER_NAME="smarttub-mqtt"
-WEB_URL="http://localhost:8000"
+WEB_URL="http://localhost:8080"
 MQTT_BROKER="${MQTT_BROKER:-localhost}"
 MQTT_PORT="${MQTT_PORT:-1883}"
 MQTT_BASE_TOPIC="${MQTT_BASE_TOPIC:-smarttub-mqtt}"
