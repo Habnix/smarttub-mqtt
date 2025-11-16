@@ -90,6 +90,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Conditional discovery based on DISCOVERY_MODE
   - Pass discovery_coordinator to FastAPI app
   - Graceful shutdown handling
+- **MQTT Topics**: Changed `/light/` to `/lights/` for consistency across all components
+- **Docker Configuration**: LOG_DIR default changed to `/logs` (was `/var/log/smarttub-mqtt`)
+
+### Fixed
+- **Docker Healthcheck**: Changed from curl to Python urllib for slim image compatibility
+- **Exception Handler** (`src/cli/run.py`): Fixed indentation in exception handler
+- **SmartTub API Access** (`src/core/background_discovery.py`): Use `spas` property instead of non-existent `get_account()` method
 
 ### Technical Details
 - **Discovery Modes**:

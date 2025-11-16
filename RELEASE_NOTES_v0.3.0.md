@@ -193,6 +193,20 @@ Follow the [Quick Start](https://github.com/Habnix/smarttub-mqtt#quick-start-doc
 6. `05091b9` - Phase 4: Startup Integration (Tasks 4.1 + 4.2)
 7. `fa80279` - docs: Phase 5.3 - Documentation for Background Discovery
 8. `5161439` - feat: Phase 6.1 - Docker Environment Variables
+9. `6e08688` - fix: Docker healthcheck curl → Python urllib
+10. `c3db112` - fix: Indentation in run.py exception handler
+11. `b97d85f` - fix: LOG_DIR consistency (.env)
+12. `f377eae` - docs: LOG_DIR documentation updates
+13. `16e37b7` - fix: MQTT topic path /light/ → /lights/
+14. `ea9b313` - fix: SmartTubClient API access (spas property)
+
+## 🐛 Bugfixes During Release
+
+- **Docker Healthcheck**: Switched from `curl` to Python `urllib` for compatibility with slim image
+- **MQTT Topics**: Corrected path from `/light/` to `/lights/` for consistency
+- **LOG_DIR**: Aligned Docker default to `/logs` (was `/var/log/smarttub-mqtt`)
+- **Exception Handler**: Fixed indentation in `run.py`
+- **SmartTubClient API**: Fixed discovery to use `spas` property instead of non-existent `get_account()` method
 
 ## 📚 Documentation
 
