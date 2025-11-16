@@ -48,3 +48,9 @@ dev = [
 Homepage = "https://github.com/smarttub-mqtt"
 Source = "https://github.com/smarttub-mqtt"
 Issues = "https://github.com/smarttub-mqtt/issues"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml", "*.json", "*.html", "*.css", "*.js"]
