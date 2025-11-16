@@ -28,8 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy types-PyYAML
-          pip install -e .
+          pip install -e .[dev]
       
       - name: Run Ruff linter
         run: |
@@ -75,8 +74,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio pytest-cov responses
-          pip install -e .
+          pip install -e .[dev]
       
       - name: Run pytest
         run: |
@@ -158,8 +156,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install safety bandit
-          pip install -e .
+          pip install -e .[dev]
       
       - name: Run Safety check (dependencies)
         run: |
