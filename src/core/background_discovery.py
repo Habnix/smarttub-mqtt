@@ -68,6 +68,7 @@ class BackgroundDiscoveryRunner:
         
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._start_lock = asyncio.Lock()  # Prevent concurrent starts
         
         # Discovery configuration
         self.yaml_path = Path("/config/discovered_items.yaml")
@@ -115,19 +116,21 @@ class BackgroundDiscoveryRunner:
         Returns:
             Status dict with success/error
         """
-        # Check if already running
-        if self.is_running():
-            logger.warning("Discovery already running, cannot start new task")
-            return {
-                "success": False,
-                "error": "Discovery already running",
-            }
-        
-        # Reset stop event
-        self._stop_event.clear()
-        
-        # Update state to running
-        await self.state_manager.update_state({
+        # Use lock to prevent race conditions
+        async with self._start_lock:
+            # Check if already running
+            if self.is_running():
+                logger.warning("Discovery already running, cannot start new task")
+                return {
+                    "success": False,
+                    "error": "Discovery already running",
+                }
+            
+            # Reset stop event
+            self._stop_event.clear()
+            
+            # Update state to running
+            await self.state_manager.update_state({
             "status": DiscoveryStatus.RUNNING,
             "mode": mode,
             "started_at": datetime.now(),

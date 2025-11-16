@@ -43,6 +43,7 @@ class DiscoveryMQTTHandler:
         coordinator: DiscoveryCoordinator,
         topic_mapper: MQTTTopicMapper,
         mqtt_client: any,
+        event_loop: Optional[asyncio.AbstractEventLoop] = None,
     ):
         """
         Initialize MQTT handler.
@@ -51,10 +52,12 @@ class DiscoveryMQTTHandler:
             coordinator: Discovery coordinator instance
             topic_mapper: MQTT topic mapper
             mqtt_client: MQTT broker client
+            event_loop: Event loop for scheduling async tasks from MQTT callbacks
         """
         self.coordinator = coordinator
         self.topic_mapper = topic_mapper
         self.mqtt_client = mqtt_client
+        self._event_loop = event_loop
         
         self._subscribed = False
         
@@ -134,12 +137,18 @@ class DiscoveryMQTTHandler:
         
         Args:
             topic: MQTT topic
-            payload: Message payload
+            payload: Message payload (can be bytes or str)
         """
         try:
             # Parse JSON payload
             try:
-                data = json.loads(payload.decode('utf-8'))
+                # Handle both bytes and str
+                if isinstance(payload, bytes):
+                    payload_str = payload.decode('utf-8')
+                else:
+                    payload_str = payload
+                    
+                data = json.loads(payload_str)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning(f"Invalid JSON in discovery control message: {e}")
                 return
@@ -155,14 +164,28 @@ class DiscoveryMQTTHandler:
                 mode = data.get("mode", "quick")
                 logger.info(f"MQTT control: Starting discovery (mode={mode})")
                 
-                # Schedule async start
-                asyncio.create_task(self._handle_start_command(mode))
+                # Schedule async start using event loop from MQTT thread
+                if self._event_loop is None:
+                    logger.error("No event loop available for MQTT discovery command")
+                    return
+                    
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_start_command(mode),
+                    self._event_loop
+                )
             
             elif action == "stop":
                 logger.info("MQTT control: Stopping discovery")
                 
-                # Schedule async stop
-                asyncio.create_task(self._handle_stop_command())
+                # Schedule async stop using event loop from MQTT thread
+                if self._event_loop is None:
+                    logger.error("No event loop available for MQTT discovery command")
+                    return
+                    
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_stop_command(),
+                    self._event_loop
+                )
         
         except Exception as e:
             logger.error(f"Error handling discovery control message: {e}", exc_info=True)

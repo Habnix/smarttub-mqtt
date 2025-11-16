@@ -274,7 +274,8 @@ async def _async_main(
             discovery_mqtt_handler = DiscoveryMQTTHandler(
                 coordinator=discovery_coordinator,
                 topic_mapper=topic_mapper,
-                mqtt_client=broker
+                mqtt_client=broker,
+                event_loop=asyncio.get_event_loop()
             )
             
             # Start MQTT handler (subscribe to control topic)
