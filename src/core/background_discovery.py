@@ -401,8 +401,10 @@ class BackgroundDiscoveryRunner:
             
             # Try using light.set_mode() (includes built-in state verification)
             try:
-                logger.info(f"Calling set_mode({mode_name}, 50)...")
-                await light.set_mode(mode, intensity=50)
+                # OFF mode requires intensity=0, others use 50
+                intensity = 0 if mode_name == "OFF" else 50
+                logger.info(f"Calling set_mode({mode_name}, {intensity})...")
+                await light.set_mode(mode, intensity=intensity)
                 # Success - mode was set and verified
                 logger.info(f"Mode {mode_name} verified by set_mode()")
                 return True
@@ -417,38 +419,44 @@ class BackgroundDiscoveryRunner:
                     return False
                 
                 # State change timeout - common for slow API
-                # Solution: Wait extra time and verify manually
+                # Solution: Wait extra time and verify manually with retries
                 if "State change not reflected" in error_str or "timeout" in error_str.lower():
-                    logger.info(f"Mode {mode_name} timed out - verifying manually after {wait_time}s...")
+                    logger.info(f"Mode {mode_name} timed out - verifying manually with retries...")
                     
-                    # Wait extra time for slow API
-                    await asyncio.sleep(wait_time)
-                    
-                    try:
-                        # Refresh spa status to get current light state
-                        status = await light.spa.get_status_full()
-                        logger.info(f"Got status, checking {len(status.lights)} lights...")
+                    # Try multiple times with increasing delays
+                    for attempt in range(3):
+                        wait = wait_time + (attempt * 5)  # 20s, 25s, 30s
+                        logger.debug(f"Verification attempt {attempt + 1}/3, waiting {wait}s...")
+                        await asyncio.sleep(wait if attempt == 0 else 5)  # First wait full, then +5s each
                         
-                        # Find our light in the status
-                        for status_light in status.lights:
-                            if status_light.zone == light.zone:
-                                current_mode = status_light.mode
-                                logger.info(f"Light zone {light.zone}: Expected={mode_name}, Got={current_mode.name if current_mode else 'None'}")
-                                
-                                if current_mode and current_mode.name == mode_name:
-                                    logger.info(f"Mode {mode_name} verified manually after timeout")
-                                    return True
-                                else:
-                                    current = current_mode.name if current_mode else "None"
-                                    logger.debug(f"Mode verification failed: expected {mode_name}, got {current}")
-                                    return False
-                        
-                        logger.warning(f"Light zone {light.zone} not found in status")
-                        return False
+                        try:
+                            # Refresh spa status to get current light state
+                            status = await light.spa.get_status_full()
+                            logger.debug(f"Got status, checking {len(status.lights)} lights...")
                             
-                    except Exception as verify_error:
-                        logger.error(f"Manual verification exception: {verify_error}")
-                        return False
+                            # Find our light in the status
+                            for status_light in status.lights:
+                                if status_light.zone == light.zone:
+                                    current_mode = status_light.mode
+                                    current_mode_name = current_mode.name if current_mode else "None"
+                                    logger.debug(f"Light zone {light.zone}: Expected={mode_name}, Got={current_mode_name}")
+                                    
+                                    if current_mode and current_mode.name == mode_name:
+                                        logger.info(f"Mode {mode_name} verified manually (attempt {attempt + 1})")
+                                        return True
+                                    
+                                    # Wrong mode, continue trying
+                                    logger.debug(f"Mode mismatch on attempt {attempt + 1}: expected {mode_name}, got {current_mode_name}")
+                                    break
+                            else:
+                                logger.warning(f"Light zone {light.zone} not found in status")
+                                
+                        except Exception as verify_error:
+                            logger.warning(f"Verification attempt {attempt + 1} exception: {verify_error}")
+                    
+                    # All attempts failed
+                    logger.info(f"Mode {mode_name} verification failed after 3 attempts")
+                    return False
                 
                 # Other errors
                 logger.error(f"Mode {mode_name} failed: {e}")
@@ -465,6 +473,9 @@ class BackgroundDiscoveryRunner:
         """
         Save discovery results to YAML file.
         
+        Merges with existing data to preserve pumps, reminders, etc.
+        Only updates the 'lights' section for each spa.
+        
         Args:
             results: Discovery results
         
@@ -475,33 +486,63 @@ class BackgroundDiscoveryRunner:
             # Ensure directory exists
             self.yaml_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Prepare data structure
-            discovered_items = {
-                "discovered_items": {}
-            }
+            # Load existing data if file exists
+            existing_data = {"discovered_items": {}}
+            if self.yaml_path.exists():
+                try:
+                    with open(self.yaml_path, "r") as f:
+                        existing_data = yaml.safe_load(f) or {"discovered_items": {}}
+                        if "discovered_items" not in existing_data:
+                            existing_data = {"discovered_items": {}}
+                    logger.debug(f"Loaded existing data from {self.yaml_path}")
+                except Exception as e:
+                    logger.warning(f"Could not load existing YAML, starting fresh: {e}")
+                    existing_data = {"discovered_items": {}}
             
-            # Convert results to YAML format
+            # Update only the lights section for each spa
             for spa_id, spa_data in results["spas"].items():
-                discovered_items["discovered_items"][spa_id] = {
-                    "lights": [
-                        {
-                            "id": light["id"],
-                            "detected_modes": light["detected_modes"]
-                        }
-                        for light in spa_data["lights"]
-                    ]
-                }
+                # Ensure spa entry exists
+                if spa_id not in existing_data["discovered_items"]:
+                    existing_data["discovered_items"][spa_id] = {}
+                
+                # Get existing lights (if any)
+                existing_lights = existing_data["discovered_items"][spa_id].get("lights", [])
+                
+                # Update detected_modes in existing lights, preserving all other fields
+                for new_light in spa_data["lights"]:
+                    light_id = new_light["id"]
+                    new_modes = new_light["detected_modes"]
+                    
+                    # Find existing light entry
+                    found = False
+                    for existing_light in existing_lights:
+                        if existing_light.get("id") == light_id:
+                            # Update only detected_modes, preserve everything else (raw, etc.)
+                            existing_light["detected_modes"] = new_modes
+                            found = True
+                            break
+                    
+                    # If light not found in existing data, add it (shouldn't happen but safety net)
+                    if not found:
+                        existing_lights.append({
+                            "id": light_id,
+                            "detected_modes": new_modes
+                        })
+                
+                # Save updated lights back
+                existing_data["discovered_items"][spa_id]["lights"] = existing_lights
             
-            # Save to YAML
+            # Save merged data to YAML
             with open(self.yaml_path, "w") as f:
                 yaml.dump(
-                    discovered_items,
+                    existing_data,
                     f,
                     default_flow_style=False,
                     sort_keys=False
                 )
             
-            logger.info(f"Discovery results saved to {self.yaml_path}")
+            logger.info(f"Discovery results merged and saved to {self.yaml_path}")
+            return self.yaml_path
             return self.yaml_path
         
         except Exception as e:
