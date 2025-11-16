@@ -8,7 +8,7 @@ at startup, before the first live API call.
 import logging
 import yaml
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import List
 
 from src.mqtt.topic_mapper import MQTTTopicMapper
 

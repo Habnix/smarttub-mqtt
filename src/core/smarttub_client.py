@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -345,7 +344,7 @@ class SmartTubClient:
             raise RuntimeError("No spa available for control")
 
         spa = self._spas[0]
-        logger.info(f"Attempting to set pump state", extra={"pump_id": pump_id, "enabled": enabled})
+        logger.info("Attempting to set pump state", extra={"pump_id": pump_id, "enabled": enabled})
 
         try:
             # Get SpaPump objects from python-smarttub library

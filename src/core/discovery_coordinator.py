@@ -8,12 +8,10 @@ Coordinates State Manager, Runner, and MQTT publishing.
 import asyncio
 import logging
 from typing import Optional, Dict, Any, Callable
-from datetime import datetime
 
 from src.core.discovery_state import (
     DiscoveryStateManager,
     DiscoveryState,
-    DiscoveryStatus,
     DiscoveryMode,
 )
 from src.core.background_discovery import BackgroundDiscoveryRunner

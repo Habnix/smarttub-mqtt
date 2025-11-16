@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import yaml
 
 from src.core.discovery_state import (
@@ -227,8 +227,7 @@ class BackgroundDiscoveryRunner:
                 # Update progress
                 await self.state_manager.update_progress(current_spa=spa_id)
                 
-                # Get spa status to find lights
-                status = await spa.get_status()
+                # Get lights for this spa
                 lights = await spa.get_lights()
                 
                 if not lights:

@@ -21,7 +21,6 @@ from src.core import config_loader
 from src.core.smarttub_client import SmartTubClient
 from src.core.state_manager import StateManager
 from src.core.capability_detector import CapabilityDetector
-from src.core.item_prober import ItemProber
 from src.core.error_tracker import ErrorTracker, ErrorCategory, ErrorSeverity  # T058
 from src.core.yaml_fallback import YAMLFallbackPublisher
 from src.core.discovery_coordinator import DiscoveryCoordinator
@@ -75,18 +74,26 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 @contextlib.contextmanager
 def _signal_handler_context(
     loop: asyncio.AbstractEventLoop,
-    shutdown_event: asyncio.Event,
+    event: asyncio.Event,
     signals_to_handle: Iterable[signal.Signals],
 ) -> Iterator[None]:
-    installed: list[signal.Signals] = []
+    def _make_handler(sig: signal.Signals):
+        def handler() -> None:
+            if not event.is_set():
+                logger.info("shutdown-signal-received", signal=sig.name)
+                event.set()
+        return handler
 
-def _make_handler(sig: signal.Signals):
-    def handler() -> None:
-        if not shutdown_event.is_set():
-            logger.info("shutdown-signal-received", signal=sig.name)
-            shutdown_event.set()
-
-    return handler
+    # Install signal handlers
+    for sig in signals_to_handle:
+        loop.add_signal_handler(sig, _make_handler(sig))
+    
+    try:
+        yield
+    finally:
+        # Remove signal handlers on cleanup
+        for sig in signals_to_handle:
+            loop.remove_signal_handler(sig)
 
 
 async def _polling_loop(
@@ -340,8 +347,8 @@ async def _async_main(
                             error_code="STARTUP_DISCOVERY_FAILED"
                         )
                 
-                # Create background task without awaiting it
-                discovery_task = loop.create_task(run_discovery())
+                # Create background task without awaiting it (fire-and-forget)
+                loop.create_task(run_discovery())
 
         # Handle discovery-only mode
         if discover:
@@ -349,7 +356,7 @@ async def _async_main(
             try:
                 from src.core.item_prober import ItemProber
                 item_prober = ItemProber(config, smarttub_client, topic_mapper, error_tracker=error_tracker)
-                discovery_results = await item_prober.probe_all()
+                await item_prober.probe_all()
                 
                 logger.info("Discovery completed successfully")
                 return 0
@@ -453,21 +460,6 @@ async def _async_main(
             logger.warning("Web UI dependencies not available - install FastAPI and Jinja2")
         elif not HAS_UVICORN:
             logger.warning("uvicorn not available - cannot start Web UI")
-
-    # NOTE: Automatic disabling of CHECK_SMARTTUB is commented out
-    # so the program keeps running and can continue to receive MQTT commands.
-    # if getattr(config, "check_smarttub", True):
-    #     try:
-    #         env_file = Path("/config/.env")
-    #         if env_file.exists():
-    #             content = env_file.read_text()
-    #             # Replace CHECK_SMARTTUB=true with CHECK_SMARTTUB=false
-    #             updated_content = content.replace("CHECK_SMARTTUB=true", "CHECK_SMARTTUB=false")
-    #             if updated_content != content:  # Only write if something changed
-    #                 env_file.write_text(updated_content)
-    #                 logger.info("CHECK_SMARTTUB was automatically set to false after successful discovery")
-    #     except Exception as e:
-    #         logger.warning(f"Error while automatically setting CHECK_SMARTTUB: {e}")
 
         # Register signal handlers if requested
         if register_signal_handlers:

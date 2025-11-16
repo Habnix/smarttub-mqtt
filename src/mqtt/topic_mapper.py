@@ -133,7 +133,7 @@ class MQTTTopicMapper:
                     qos=1,
                     retain=True
                 ))
-                logger.info(f"created-heater-meta", extra={"topic": topic_meta, "spa_id": spa_id})
+                logger.info("created-heater-meta", extra={"topic": topic_meta, "spa_id": spa_id})
             except Exception:
                 # don't let a meta serialization error break snapshot publish
                 pass
@@ -232,7 +232,7 @@ class MQTTTopicMapper:
                     ))
                     # Info-level log so operators can see meta topics even when
                     # logger is set to INFO (debug logs are more verbose).
-                    logger.info(f"created-pump-meta", extra={"topic": topic_meta, "spa_id": spa_id, "pump_id": pid})
+                    logger.info("created-pump-meta", extra={"topic": topic_meta, "spa_id": spa_id, "pump_id": pid})
                 except Exception:
                     # don't let a meta serialization error break snapshot publish
                     pass
@@ -322,7 +322,7 @@ class MQTTTopicMapper:
                         qos=1,
                         retain=True
                     ))
-                    logger.info(f"created-light-meta", extra={"topic": topic_meta, "spa_id": spa_id, "light_id": lid})
+                    logger.info("created-light-meta", extra={"topic": topic_meta, "spa_id": spa_id, "light_id": lid})
                 except Exception as e:
                     # don't let a meta serialization error break snapshot publish
                     logger.warning(f"Error creating light meta for {lid}: {e}")

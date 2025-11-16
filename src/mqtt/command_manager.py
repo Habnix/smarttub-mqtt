@@ -5,12 +5,10 @@ import json
 import logging
 from typing import Any, Callable
 import queue
-import threading
 
 from src.core.config_loader import AppConfig
 from src.core.smarttub_client import SmartTubClient
 
-from src.mqtt.broker_client import MQTTBrokerClient
 
 logger = logging.getLogger("smarttub.mqtt.commands")
 

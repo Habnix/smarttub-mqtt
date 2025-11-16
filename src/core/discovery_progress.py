@@ -6,7 +6,7 @@ Tracks the progress of spa discovery operations and provides real-time status up
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from threading import Lock

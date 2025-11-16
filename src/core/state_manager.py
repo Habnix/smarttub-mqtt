@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from src.core.config_loader import AppConfig
 from src.core.smarttub_client import SmartTubClient
 from src.mqtt.topic_mapper import MQTTTopicMapper
 

@@ -74,7 +74,7 @@ def validate_environment() -> dict[str, str]:
     if config_path:
         logger.info(f"  ✓ CONFIG_PATH: {config_path}")
     else:
-        logger.info(f"  ℹ No YAML config - using .env only")
+        logger.info("  ℹ No YAML config - using .env only")
     logger.info(f"  ✓ LOG_DIR: {log_dir}")
     
     return {
@@ -148,7 +148,7 @@ logging:
             except Exception as e:
                 logger.warning(f"  ⚠ Could not create config file: {e} (will try to continue)")
     else:
-        logger.info(f"  ℹ No YAML config file - using .env only")
+        logger.info("  ℹ No YAML config file - using .env only")
 
 
 def setup_signal_handlers() -> None:

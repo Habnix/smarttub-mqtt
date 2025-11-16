@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict
+import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -12,7 +12,12 @@ from starlette.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.core.capability_detector import CapabilityDetector
+from src.core.config_loader import AppConfig
+from src.core.state_manager import StateManager
+from src.core.smarttub_client import SmartTubClient
 from src.web.auth import BasicAuthMiddleware
+
+logger = logging.getLogger(__name__)
 
 
 class WebApp:

@@ -5,11 +5,9 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import traceback
 
 import yaml
 import asyncio
-import smarttub
 
 from src.core.config_loader import AppConfig
 from src.mqtt.topic_mapper import MQTTMessage
@@ -578,7 +576,6 @@ class ItemProber:
                                 logger.debug(f"light.turn_off() failed for zone {zone_num}: {e}, trying direct API")
                         
                         # Fallback to direct API with rate limiting
-                        import smarttub
                         body = {"intensity": 0, "mode": "OFF"}
                         success = await self._safe_request_with_retry(
                             spa, "PATCH", f"lights/{zone_num}", body, max_retries=2
@@ -1117,7 +1114,6 @@ class ItemProber:
         Returns:
             True if successful, False otherwise
         """
-        import smarttub
         
         for attempt in range(max_retries):
             try:
@@ -1231,7 +1227,7 @@ class ItemProber:
                                 logger.warning(f"❌ Mode verification failed: expected {mode_name}, got {current_mode_name}")
                                 return False
                         else:
-                            logger.debug(f"Manual verification failed: light_obj.mode is None")
+                            logger.debug("Manual verification failed: light_obj.mode is None")
                     except Exception as verify_error:
                         logger.debug(f"Manual verification failed: {verify_error}")
                     
@@ -1257,7 +1253,7 @@ class ItemProber:
             try:
                 lights = await spa.get_lights()
                 if not lights:
-                    logger.debug(f"get_lights() returned None after direct API call")
+                    logger.debug("get_lights() returned None after direct API call")
                     return False
                     
                 # Find our zone in the results

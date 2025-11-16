@@ -10,11 +10,9 @@ This module provides a custom rotating file handler that:
 from __future__ import annotations
 
 import logging
-import os
 import zipfile
 from pathlib import Path
 from logging.handlers import RotatingFileHandler as StdRotatingFileHandler
-from typing import Any
 
 
 class ZipRotatingFileHandler(StdRotatingFileHandler):

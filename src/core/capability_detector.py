@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
 
+from src.core.config_loader import AppConfig
+from src.core.smarttub_client import SmartTubClient
 from src.mqtt.topic_mapper import MQTTTopicMapper
 
 logger = logging.getLogger("smarttub.core")
