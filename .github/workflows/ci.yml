@@ -125,6 +125,7 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: smarttub-mqtt:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -133,8 +134,8 @@ jobs:
       
       - name: Test Docker image
         run: |
-          docker run --rm smarttub-mqtt:test python --version
-          docker run --rm smarttub-mqtt:test python -c "import src.core.config_loader"
+          docker run --rm --entrypoint python smarttub-mqtt:test --version
+          docker run --rm --entrypoint python smarttub-mqtt:test -c "import src.core.config_loader; print('Import successful')"
 
   # ============================================================================
   # Security Scanning
