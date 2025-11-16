@@ -93,7 +93,7 @@ DISCOVERY_REFRESH_INTERVAL=86400  # NEW: Re-scan interval
 ### Logging
 ```bash
 LOG_LEVEL=INFO
-LOG_DIR=/log
+LOG_DIR=/logs  # Docker: /logs, Standalone: /var/log/smarttub-mqtt
 LOG_MAX_SIZE_MB=5  # RENAMED from max_size_mb
 LOG_MAX_FILES=1    # RENAMED from max_files
 LOG_COMPRESS=true

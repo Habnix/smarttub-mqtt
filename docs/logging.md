@@ -29,8 +29,10 @@ When a log file reaches the configured maximum size (default: 5MB):
 Log rotation is configured via environment variables in `/config/.env`:
 
 ```bash
-# Log directory (default: /var/log/smarttub-mqtt)
-LOG_DIR=/var/log/smarttub-mqtt
+# Log directory
+# Docker: /logs (mapped to ./logs on host)
+# Standalone: /var/log/smarttub-mqtt
+LOG_DIR=/logs
 
 # Maximum log file size in MB before rotation (default: 5)
 LOG_MAX_SIZE_MB=5
@@ -52,7 +54,7 @@ Alternatively, configure in `config/smarttub.yaml`:
 ```yaml
 logging:
   level: INFO
-  log_dir: /var/log/smarttub-mqtt
+  log_dir: /logs  # Docker default
   log_max_size_mb: 5
   log_max_files: 1
   log_compress: true

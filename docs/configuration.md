@@ -190,7 +190,7 @@ web_ui:
 ```yaml
 logging:
   level: info                           # Log level
-  log_dir: /var/log/smarttub-mqtt      # Log directory
+  log_dir: /logs                       # Log directory (Docker: /logs, Standalone: /var/log/smarttub-mqtt)
   log_max_size_mb: 5                   # Max file size before rotation
   log_max_files: 5                     # Max rotated files to keep
   log_compress: true                   # Compress rotated logs
@@ -204,7 +204,11 @@ logging:
 **Environment variables:**
 ```bash
 LOG_LEVEL=info
-LOG_DIR=/var/log/smarttub-mqtt
+# Docker (with volume mapping ./logs:/logs)
+LOG_DIR=/logs
+# Standalone installation
+# LOG_DIR=/var/log/smarttub-mqtt
+
 LOG_MAX_SIZE_MB=5
 LOG_MAX_FILES=5
 LOG_COMPRESS=true
@@ -349,7 +353,7 @@ web_ui:
 # Logging
 logging:
   level: info
-  log_dir: /var/log/smarttub-mqtt
+  log_dir: /logs
   log_max_size_mb: 5
   log_max_files: 5
   log_compress: true
@@ -408,7 +412,7 @@ CAPABILITY_REFRESH_INTERVAL=300
 
 # Logging
 LOG_LEVEL=info
-LOG_DIR=/var/log/smarttub-mqtt
+LOG_DIR=/logs
 ```
 
 ## Environment variable override

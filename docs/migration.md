@@ -41,7 +41,7 @@ mv .env /config/
 |-----|-----|---------|
 | `logging.max_size_mb` | `logging.log_max_size_mb` | 5 |
 | `logging.max_files` | `logging.log_max_files` | 5 |
-| `logging.dir` | `logging.log_dir` | `/var/log/smarttub-mqtt` |
+| `logging.dir` | `logging.log_dir` | `/logs` (Docker) |
 
 **Migration:**
 ```yaml
@@ -51,11 +51,11 @@ logging:
   max_files: 7
   dir: /var/log/spa
 
-# Neu (empfohlen)
+# Neu (empfohlen für Docker)
 logging:
   log_max_size_mb: 10
   log_max_files: 7
-  log_dir: /var/log/spa
+  log_dir: /logs
 ```
 
 ## New Features
