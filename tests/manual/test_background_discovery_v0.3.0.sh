@@ -338,7 +338,14 @@ test_mqtt_topics() {
     # Ensure we start from idle state
     print_test "Reset state before MQTT test"
     curl -s -X POST "$WEB_URL/api/discovery/reset" > /dev/null
+    
+    # Wait and verify state is actually idle
     sleep 2
+    STATUS=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+    if [ "$STATUS" != "idle" ]; then
+        print_info "Waiting for reset to complete (current: $STATUS)..."
+        sleep 3
+    fi
     
     print_test "Start discovery via MQTT command"
     mosquitto_pub -h "$MQTT_BROKER" -p "$MQTT_PORT" \
