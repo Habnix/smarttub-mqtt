@@ -218,6 +218,8 @@ async def _async_main(
     command_queue_task: asyncio.Task | None = None
     web_server_task: asyncio.Task | None = None
     discovery_task: asyncio.Task | None = None
+    discovery_coordinator: DiscoveryCoordinator | None = None
+    discovery_mqtt_handler: DiscoveryMQTTHandler | None = None
     event = shutdown_event or asyncio.Event()
 
     try:
@@ -266,9 +268,6 @@ async def _async_main(
                 # This is not critical - capabilities will be refreshed later
 
         # Initialize Background Discovery (Task 4.1 + 4.2)
-        discovery_coordinator = None
-        discovery_mqtt_handler = None
-        
         try:
             # Create Discovery Coordinator
             discovery_coordinator = DiscoveryCoordinator(
