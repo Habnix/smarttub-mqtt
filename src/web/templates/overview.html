@@ -211,14 +211,42 @@
                             <div class="text-muted">
                                 Brightness: {{ light.brightness|default(0) }}%
                             </div>
-                            {% if spa_caps.lights and spa_caps.lights.modes %}
+                            {% set spa_discovered = discovered_items.get(spa_id, {}) %}
+                            {% set light_discovered = None %}
+                            {% if spa_discovered and spa_discovered.lights %}
+                                {% for disc_light in spa_discovered.lights %}
+                                    {% if disc_light.zone == light.zone %}
+                                        {% set light_discovered = disc_light %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                            {% if light_discovered and light_discovered.detected_modes %}
                             <div class="text-muted mt-2">
-                                <small>Available Modes ({{ spa_caps.lights.modes|length }}):</small>
+                                <small>
+                                    <i class="fas fa-check-circle text-success me-1"></i>
+                                    Detected Modes ({{ light_discovered.detected_modes|length }}):
+                                </small>
+                                <div style="max-height: 100px; overflow-y: auto; font-size: 0.75rem;">
+                                    {% for mode in light_discovered.detected_modes %}
+                                    <span class="badge bg-success me-1 mb-1">{{ mode }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% elif spa_caps.lights and spa_caps.lights.modes %}
+                            <div class="text-muted mt-2">
+                                <small>
+                                    <i class="fas fa-info-circle text-warning me-1"></i>
+                                    All Possible Modes ({{ spa_caps.lights.modes|length }}):
+                                </small>
                                 <div style="max-height: 100px; overflow-y: auto; font-size: 0.75rem;">
                                     {% for mode in spa_caps.lights.modes %}
                                     <span class="badge bg-secondary me-1 mb-1">{{ mode }}</span>
                                     {% endfor %}
                                 </div>
+                                <small class="text-warning">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    Run discovery to detect working modes
+                                </small>
                             </div>
                             {% endif %}
                         </div>

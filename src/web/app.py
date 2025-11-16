@@ -136,12 +136,27 @@ class WebApp:
                     for spa_id in list(self.capability_detector._capabilities_cache.keys()):
                         capabilities[spa_id] = self.capability_detector.get_capability_profile(spa_id)
 
+                # Load discovered items from YAML
+                discovered_items = {}
+                try:
+                    from pathlib import Path
+                    import yaml
+                    yaml_path = Path(self.config.config_dir) / "discovered_items.yaml"
+                    if yaml_path.exists():
+                        with open(yaml_path, 'r') as f:
+                            data = yaml.safe_load(f)
+                            if data and 'discovered_items' in data:
+                                discovered_items = data['discovered_items']
+                except Exception as e:
+                    logger.warning(f"Could not load discovered_items.yaml: {e}")
+
                 return self.templates.TemplateResponse(
                     "overview.html",
                     {
                         "request": request,
                         "state": current_state,
                         "capabilities": capabilities,
+                        "discovered_items": discovered_items,
                         "config": self.config,
                         "versions": version_info,
                         "last_updated": datetime.now(timezone.utc).isoformat()
