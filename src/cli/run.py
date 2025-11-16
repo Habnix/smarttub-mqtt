@@ -254,8 +254,8 @@ async def _async_main(
                     spa_id = str(spa.id)
                     await capability_detector.detect_capabilities(spa_id)
                     logger.info(f"Detected capabilities for spa {spa_id}")
-        except Exception as e:
-            logger.warning(f"Initial capability detection failed: {e}")
+            except Exception as e:
+                logger.warning(f"Initial capability detection failed: {e}")
                 # This is not critical - capabilities will be refreshed later
 
         # Initialize Background Discovery (Task 4.1 + 4.2)
