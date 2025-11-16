@@ -13,9 +13,11 @@ venv/
 
 # Local config
 config/
+!config/.env.example
 
 # Logs
 *.log
+logs/
 
 # Editor & OS files
 .DS_Store
