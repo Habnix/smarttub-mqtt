@@ -92,7 +92,7 @@ services:
       
       # Logging Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LOG_DIR: /log
+      LOG_DIR: /logs
       LOG_MAX_SIZE_MB: ${LOG_MAX_SIZE_MB:-5}
       LOG_MAX_FILES: ${LOG_MAX_FILES:-1}
       LOG_COMPRESS: ${LOG_COMPRESS:-true}
@@ -101,7 +101,7 @@ services:
       CONFIG_PATH: /config/smarttub.yaml
     volumes:
       - ./smarttub-mqtt/config:/config
-      - ./smarttub-mqtt/log:/log
+      - ./smarttub-mqtt/logs:/logs
     networks:
       - smarttub-net
     healthcheck:
