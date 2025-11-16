@@ -121,15 +121,17 @@ Set the `DISCOVERY_MODE` environment variable to run discovery automatically at 
 # No automatic discovery (default)
 DISCOVERY_MODE=off
 
-# Quick discovery at startup
+# Quick discovery at startup (~5 minutes)
 DISCOVERY_MODE=startup_quick
 
-# Full discovery at startup
+# Full discovery at startup (~20 minutes)
 DISCOVERY_MODE=startup_full
 
-# YAML-only at startup
+# YAML-only at startup (instant, loads saved results)
 DISCOVERY_MODE=startup_yaml
 ```
+
+**⚠️ IMPORTANT**: After your first successful discovery, **manually change** `DISCOVERY_MODE` to `off` or `startup_yaml` in your `.env` file to avoid re-running the full discovery on every container restart!
 
 **Docker Compose Example**:
 ```yaml
@@ -140,6 +142,12 @@ services:
       - DISCOVERY_MODE=startup_quick
     # ... other settings
 ```
+
+**Recommended Workflow**:
+1. First startup: `DISCOVERY_MODE=startup_full` (complete discovery)
+2. After completion: Change to `DISCOVERY_MODE=off` or `startup_yaml`
+3. Container will use saved `discovered_items.yaml` on subsequent restarts
+4. Re-run discovery manually via WebUI or MQTT when needed
 
 ## Output Format
 
@@ -262,15 +270,19 @@ The system will:
 
 **This is normal** on first startup. Run discovery once to create the file.
 
-### Discovery Starts Automatically
+### Discovery Starts Automatically on Every Restart
 
-**Symptom**: Discovery runs on every startup
+**Symptom**: Discovery runs on every container startup, taking 5-20 minutes each time
 
 **Cause**: `DISCOVERY_MODE` environment variable is set to `startup_quick` or `startup_full`
 
 **Solution**:
-- Set `DISCOVERY_MODE=off` (or remove the variable)
-- Restart container
+1. Wait for discovery to complete successfully once
+2. **Manually edit** your `.env` file
+3. Change `DISCOVERY_MODE=startup_full` to `DISCOVERY_MODE=off` or `DISCOVERY_MODE=startup_yaml`
+4. Restart container
+
+**Note**: The setting is **not automatically changed** after discovery. You must update it manually to avoid repeated testing on every restart.
 
 ## Performance Considerations
 

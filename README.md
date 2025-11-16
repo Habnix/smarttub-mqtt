@@ -241,6 +241,9 @@ mosquitto_pub -t 'smarttub-mqtt/discovery/control' -m '{"action":"start","mode":
 ```bash
 # In .env file
 DISCOVERY_MODE=startup_quick  # off, startup_quick, startup_full, startup_yaml
+
+# IMPORTANT: After first discovery, manually change to 'off' or 'startup_yaml'
+# to avoid re-testing on every restart!
 ```
 
 ### Discovery Modes
