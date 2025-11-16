@@ -335,6 +335,11 @@ test_mqtt_topics() {
         return
     fi
     
+    # Ensure we start from idle state
+    print_test "Reset state before MQTT test"
+    curl -s -X POST "$WEB_URL/api/discovery/reset" > /dev/null
+    sleep 2
+    
     print_test "Start discovery via MQTT command"
     mosquitto_pub -h "$MQTT_BROKER" -p "$MQTT_PORT" \
         -t "$MQTT_BASE_TOPIC/discovery/control" \
@@ -342,7 +347,7 @@ test_mqtt_topics() {
     
     if [ $? -eq 0 ]; then
         print_success "MQTT command published"
-        sleep 4
+        sleep 5
         
         # Check if discovery started (yaml_only is instant, should be completed)
         STATUS=$(curl -s "$WEB_URL/api/discovery/status" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
