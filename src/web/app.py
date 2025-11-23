@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -40,10 +41,20 @@ class WebApp:
         self.error_tracker = error_tracker  # T058
         self.progress_tracker = progress_tracker  # T059
         self.discovery_coordinator = discovery_coordinator  # Background Discovery
+
+        # Create lifespan context manager for graceful shutdown
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            # Startup
+            yield
+            # Shutdown - suppress CancelledError during shutdown
+            logger.info("Web UI shutting down gracefully")
+
         self.app = FastAPI(
             title="SmartTub MQTT Bridge",
             description="Monitor and control SmartTub whirlpool via MQTT",
             version="1.0.0",
+            lifespan=lifespan,
         )
 
         # Add Basic Auth middleware if enabled (T056)
