@@ -58,7 +58,7 @@ FROM python:3.11-slim AS runtime
 LABEL maintainer="SmartTub MQTT Maintainers"
 LABEL org.opencontainers.image.source="https://github.com/smarttub-mqtt"
 LABEL org.opencontainers.image.description="SmartTub MQTT Bridge with Web UI"
-LABEL org.opencontainers.image.version="0.3.2"
+LABEL org.opencontainers.image.version="0.3.3"
 
 # Security: Run as non-root user
 RUN groupadd -r smarttub && \
