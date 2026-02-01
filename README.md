@@ -1,7 +1,7 @@
 ````markdown
 # smarttub-mqtt
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
+[![Version](https://img.shields.io/badge/version-0.3.3-blue)](https://github.com/Habnix/smarttub-mqtt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Habnix/smarttub-mqtt/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://hub.docker.com/r/willnix/smarttub-mqtt)
@@ -104,37 +104,58 @@ A robust MQTT bridge for SmartTub hot tubs providing extensive telemetry, contro
 
 ---
 
-## Quick start (Docker)
+## Quick Start
 
-1. Prepare config dir and .env
+### Docker Compose (Recommended)
 
+1. **Clone the repository**:
 ```bash
-mkdir -p /opt/smarttub-mqtt/config
-cat > /opt/smarttub-mqtt/config/.env << EOF
-SMARTTUB_EMAIL=user@example.com
-SMARTTUB_PASSWORD=your_password
-MQTT_BROKER_URL=mqtt://broker:1883
-MQTT_USERNAME=mqttuser
-MQTT_PASSWORD=mqttpass
-# Optional: Enable startup discovery
-DISCOVERY_MODE=startup_quick
-EOF
+git clone https://github.com/Habnix/smarttub-mqtt.git
+cd smarttub-mqtt
 ```
 
-2. Run container
+2. **Configure environment**:
+```bash
+cp config/.env.example config/.env
+nano config/.env  # Edit with your credentials
+```
+
+Required settings in `config/.env`:
+```bash
+SMARTTUB_EMAIL=your-email@example.com
+SMARTTUB_PASSWORD=your_password
+MQTT_BROKER_URL=mqtt://192.168.1.100:1883  # Your external MQTT broker
+MQTT_USERNAME=your_mqtt_user               # Optional
+MQTT_PASSWORD=your_mqtt_password           # Optional
+
+# Optional: Enable startup discovery
+# DISCOVERY_MODE=startup_quick  # off, startup_quick, startup_full, startup_yaml
+```
+
+3. **Start the container**:
+```bash
+docker compose up -d
+```
+
+4. **Access Web UI**:
+Visit `http://<your-ip>:8080` for the dashboard and discovery page.
+
+5. **Check logs**:
+```bash
+docker compose logs -f
+```
+
+### Docker Run (Alternative)
 
 ```bash
 docker run -d \
   --name smarttub-mqtt \
   --restart unless-stopped \
-  -v /opt/smarttub-mqtt/config:/config \
-  -p 8000:8080 \
+  -v ./config:/config \
+  -v ./logs:/logs \
+  -p 8080:8080 \
   willnix/smarttub-mqtt:latest
 ```
-
-3. Access WebUI
-
-Visit `http://<your-ip>:8080` for the dashboard and discovery page.
 
 ---
 

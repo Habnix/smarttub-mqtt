@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smarttub-mqtt"
-version = "0.3.2"
+version = "0.3.3"
 description = "Bridge SmartTub OEM API with OpenHAB via MQTT, Web UI, and structured logging."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
   { name = "SmartTub MQTT Maintainers" }
 ]
@@ -16,11 +16,10 @@ keywords = ["smarttub", "mqtt", "openhab", "python"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent"
 ]
 dependencies = [
-  "python-smarttub>=0.0.40",
+  "python-smarttub>=0.0.46",
   "paho-mqtt>=1.6.1",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
@@ -50,7 +49,11 @@ Source = "https://github.com/smarttub-mqtt"
 Issues = "https://github.com/smarttub-mqtt/issues"
 
 [tool.setuptools]
-packages = ["src"]
+py-modules = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "*.yml", "*.json", "*.html", "*.css", "*.js"]

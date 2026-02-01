@@ -10,7 +10,7 @@ def get_smarttub_mqtt_version() -> str:
         return importlib.metadata.version("smarttub-mqtt")
     except Exception:
         # Fallback for development/uninstalled package
-        return "0.3.2-dev"
+        return "0.3.3-dev"
 
 
 def get_python_smarttub_version() -> str:

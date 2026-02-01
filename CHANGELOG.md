@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-02-01
+
+### Changed
+- **Dependency Update**: Upgraded python-smarttub from 0.0.45 to 0.0.46
+  - New authentication backend (Auth0 → SmartTub IDP)
+  - Transparent migration, no code changes required
+  - Endpoint: https://api.smarttub.io/idp/signin
+
+### Fixed
+- **Log Rotation**: Fixed OSError [Errno 9] Bad file descriptor
+  - Added shouldRollover() override with error recovery
+  - Safe stream handling in doRollover()
+  - Prevents log rotation crashes in Docker environments
+
+### Improved
+- **Documentation**: Enhanced README with Docker Compose quick start guide
+- **Project Structure**: Cleaned up development files for production deployment
+- **Deployment**: Simplified docker-compose.yml for external MQTT broker setup
+
+### Removed
+- Development and test infrastructure (tests/, docs/, specs/)
+- Legacy deployment examples (deploy/, mosquitto/, openhab/)
+- Migration tools and obsolete configuration scripts
+
 ## [0.3.2] - 2025-11-16
 
 ### Fixed

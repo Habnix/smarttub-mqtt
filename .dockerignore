@@ -29,12 +29,8 @@ wheels/
 *.egg
 MANIFEST
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.hypothesis/
+# Testing (removed from repo)
+# Tests are not included in production builds
 
 # IDE
 .vscode/
@@ -70,16 +66,9 @@ docs/_build/
 .DS_Store
 Thumbs.db
 
-# Specs (not needed in runtime)
-specs/
-
 # Tools (included separately)
 tools/*.yaml
 tools/*.log
-
-# Tests (not needed in production)
-tests/
-pytest.ini
 
 # Development
 requirements-dev.txt

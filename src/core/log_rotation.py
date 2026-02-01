@@ -56,11 +56,43 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
         self.compress = compress
         self._log_path = Path(filename)
 
+    def shouldRollover(self, record: logging.LogRecord) -> bool:
+        """Determine if rollover should occur, with protection against bad file descriptors.
+        
+        Override parent method to add error handling for closed/invalid file descriptors
+        that can occur in Docker/multi-threaded environments.
+        """
+        if self.stream is None:
+            # Stream not yet opened
+            self.stream = self._open()
+        
+        if self.maxBytes > 0:
+            # Check if file size exceeds limit
+            try:
+                self.stream.seek(0, 2)  # Go to end of file
+                if self.stream.tell() + len(self.format(record)) >= self.maxBytes:
+                    return True
+            except (OSError, ValueError) as e:
+                # Handle bad file descriptor or closed stream
+                # Log to stderr to avoid recursion
+                import sys
+                print(f"WARNING: Log rotation check failed ({e}), forcing rollover", file=sys.stderr)
+                # Force rollover to recover from invalid state
+                return True
+        
+        return False
+    
     def doRollover(self) -> None:
         """Rotate the log file and compress to ZIP, removing old ZIPs first."""
+        # Safely close the stream with error handling
         if self.stream:
-            self.stream.close()
-            self.stream = None  # type: ignore
+            try:
+                self.stream.close()
+            except (OSError, ValueError):
+                # Stream already closed or invalid
+                pass
+            finally:
+                self.stream = None  # type: ignore
 
         # Get paths
         base_name = self._log_path.stem  # e.g., "mqtt" from "mqtt.log"

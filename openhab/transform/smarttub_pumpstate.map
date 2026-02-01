@@ -1,5 +1,0 @@
-// Pump State Mapping
-// Basierend auf echten Werten: off, running
-off=Aus
-running=Läuft
--=Unbekannt
