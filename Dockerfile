@@ -73,7 +73,6 @@ WORKDIR /app
 
 # Copy application code
 COPY --chown=smarttub:smarttub src/ /app/src/
-COPY --chown=smarttub:smarttub tools/ /app/tools/
 
 # Create required directories with correct permissions
 RUN mkdir -p /config /log && \
