@@ -7,16 +7,19 @@ Coordinates State Manager, Runner, and MQTT publishing.
 
 import asyncio
 import logging
-from typing import Optional, Dict, Any, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any, Optional
 
-from src.core.discovery_state import (
-    DiscoveryStateManager,
-    DiscoveryState,
-    DiscoveryMode,
-)
 from src.core.background_discovery import BackgroundDiscoveryRunner
-from src.core.smarttub_client import SmartTubClient
 from src.core.config_loader import AppConfig
+from src.core.discovery_state import (
+    DiscoveryMode,
+    DiscoveryState,
+    DiscoveryStateManager,
+)
+from src.core.light_mode_catalog import light_mode_catalog
+from src.core.smarttub_client import SmartTubClient
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +86,8 @@ class DiscoveryCoordinator:
         )
 
         # MQTT publisher (will be set later)
-        self._mqtt_publisher: Optional[Callable] = None
+        self._mqtt_publisher: Callable[[DiscoveryState], Awaitable[None]] | None = None
+        self._persisted_state_loaded = False
 
         # Subscribe to state changes for auto-publishing
         self.state_manager.subscribe(self._on_state_change)
@@ -92,7 +96,7 @@ class DiscoveryCoordinator:
 
         logger.info("DiscoveryCoordinator initialized")
 
-    async def start_discovery(self, mode: str = "quick") -> Dict[str, Any]:
+    async def start_discovery(self, mode: str = "quick") -> dict[str, Any]:
         """
         Start discovery process.
 
@@ -125,10 +129,10 @@ class DiscoveryCoordinator:
                 return result
 
             except Exception as e:
-                logger.exception(f"Failed to start discovery: {e}")
+                logger.exception("Failed to start discovery")
                 return {"success": False, "error": str(e)}
 
-    async def stop_discovery(self) -> Dict[str, Any]:
+    async def stop_discovery(self) -> dict[str, Any]:
         """
         Stop running discovery process.
 
@@ -149,10 +153,10 @@ class DiscoveryCoordinator:
                 return result
 
             except Exception as e:
-                logger.exception(f"Failed to stop discovery: {e}")
+                logger.exception("Failed to stop discovery")
                 return {"success": False, "error": str(e)}
 
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """
         Get current discovery status.
 
@@ -160,10 +164,12 @@ class DiscoveryCoordinator:
             Status dict with state information
         """
         try:
+            await self._ensure_persisted_state_loaded()
             state = await self.state_manager.get_state()
 
             return {
                 "success": True,
+                "mode_catalog": light_mode_catalog(),
                 "status": state.status.value,
                 "mode": state.mode.value if state.mode else None,
                 "is_running": self.runner.is_running(),
@@ -179,10 +185,10 @@ class DiscoveryCoordinator:
             }
 
         except Exception as e:
-            logger.exception(f"Failed to get status: {e}")
+            logger.exception("Failed to get status")
             return {"success": False, "error": str(e)}
 
-    async def get_results(self) -> Dict[str, Any]:
+    async def get_results(self) -> dict[str, Any]:
         """
         Get discovery results (if available).
 
@@ -190,6 +196,7 @@ class DiscoveryCoordinator:
             Results dict or error
         """
         try:
+            await self._ensure_persisted_state_loaded()
             state = await self.state_manager.get_state()
 
             if state.results is None:
@@ -201,10 +208,53 @@ class DiscoveryCoordinator:
             return {"success": True, "results": state.results.to_dict()}
 
         except Exception as e:
-            logger.exception(f"Failed to get results: {e}")
+            logger.exception("Failed to get results")
             return {"success": False, "error": str(e)}
 
-    def set_mqtt_publisher(self, publisher: Callable[[DiscoveryState], None]):
+    async def _ensure_persisted_state_loaded(self) -> None:
+        """Restore the last completed run from YAML once after startup."""
+        if self._persisted_state_loaded:
+            return
+        self._persisted_state_loaded = True
+
+        current_state = await self.state_manager.get_state()
+        if current_state.status.value != "idle":
+            return
+
+        persisted = await self.runner.result_store.load_last_run_async()
+        if not persisted:
+            return
+
+        try:
+            mode = DiscoveryMode(str(persisted["mode"]))
+            started_at = datetime.fromisoformat(str(persisted["started_at"]))
+            completed_at = datetime.fromisoformat(str(persisted["completed_at"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Ignoring invalid persisted discovery metadata: %s", exc)
+            return
+
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
+        if completed_at.tzinfo is None:
+            completed_at = completed_at.replace(tzinfo=UTC)
+
+        await self.state_manager.update_state(
+            {
+                "status": "completed",
+                "mode": mode,
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "results": persisted["results"],
+                "error": None,
+            }
+        )
+        logger.info(
+            "Restored persisted discovery run from %s", self.runner.result_store.path
+        )
+
+    def set_mqtt_publisher(
+        self, publisher: Callable[[DiscoveryState], Awaitable[None]]
+    ) -> None:
         """
         Set MQTT publisher callback.
 
@@ -217,7 +267,7 @@ class DiscoveryCoordinator:
         self._mqtt_publisher = publisher
         logger.debug("MQTT publisher registered")
 
-    async def publish_status_to_mqtt(self):
+    async def publish_status_to_mqtt(self) -> None:
         """
         Manually trigger MQTT status publication.
 
@@ -232,10 +282,10 @@ class DiscoveryCoordinator:
             await self._mqtt_publisher(state)
             logger.debug("Published discovery status to MQTT")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to publish to MQTT: {e}")
 
-    async def _on_state_change(self, state: DiscoveryState):
+    async def _on_state_change(self, state: DiscoveryState) -> None:
         """
         Observer callback for state changes.
 
@@ -250,7 +300,7 @@ class DiscoveryCoordinator:
         if self._mqtt_publisher is not None:
             try:
                 await self._mqtt_publisher(state)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to auto-publish to MQTT: {e}")
 
     def is_running(self) -> bool:
@@ -262,7 +312,7 @@ class DiscoveryCoordinator:
         """
         return self.runner.is_running()
 
-    async def reset_state(self) -> Dict[str, Any]:
+    async def reset_state(self) -> dict[str, Any]:
         """
         Reset discovery state to idle.
 
@@ -285,7 +335,7 @@ class DiscoveryCoordinator:
                 return {"success": True, "message": "State reset to idle"}
 
             except Exception as e:
-                logger.exception(f"Failed to reset state: {e}")
+                logger.exception("Failed to reset state")
                 return {"success": False, "error": str(e)}
 
     @classmethod

@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import logging
 import zipfile
-from pathlib import Path
 from logging.handlers import RotatingFileHandler as StdRotatingFileHandler
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class ZipRotatingFileHandler(StdRotatingFileHandler):
@@ -58,14 +60,14 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
 
     def shouldRollover(self, record: logging.LogRecord) -> bool:
         """Determine if rollover should occur, with protection against bad file descriptors.
-        
+
         Override parent method to add error handling for closed/invalid file descriptors
         that can occur in Docker/multi-threaded environments.
         """
         if self.stream is None:
             # Stream not yet opened
             self.stream = self._open()
-        
+
         if self.maxBytes > 0:
             # Check if file size exceeds limit
             try:
@@ -76,12 +78,16 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
                 # Handle bad file descriptor or closed stream
                 # Log to stderr to avoid recursion
                 import sys
-                print(f"WARNING: Log rotation check failed ({e}), forcing rollover", file=sys.stderr)
+
+                print(
+                    f"WARNING: Log rotation check failed ({e}), forcing rollover",
+                    file=sys.stderr,
+                )
                 # Force rollover to recover from invalid state
                 return True
-        
+
         return False
-    
+
     def doRollover(self) -> None:
         """Rotate the log file and compress to ZIP, removing old ZIPs first."""
         # Safely close the stream with error handling
@@ -120,9 +126,9 @@ class ZipRotatingFileHandler(StdRotatingFileHandler):
 
                 # Delete the rotated log file after successful ZIP
                 rotated_log.unlink()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # If ZIP fails, keep the rotated log
-                logging.error(f"Failed to compress log {rotated_log}: {e}")
+                logger.error("Failed to compress log %s: %s", rotated_log, e)
 
         # Open fresh log file
         if not self.delay:

@@ -1,8 +1,15 @@
 #!/bin/bash
-# Security Check Script
-# Basic security checks
+# Security checks for source, locked production dependencies and secrets.
 
-set -e
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+PYTHON_BIN="${PYTHON:-python}"
+if [[ -x .venv/bin/python ]]; then
+    PYTHON_BIN=.venv/bin/python
+fi
 
 echo "🔒 Security check for smarttub-mqtt"
 echo "===================================="
@@ -32,7 +39,7 @@ fi
 # Test 3: check .env.example for placeholder secrets
 echo ""
 echo "Test 3: check .env.example for placeholder secrets..."
-SECRETS=$(grep -E "password|secret|key" .env.example | grep -v "changeme\|example\|your-" | grep -v "^#" || true)
+SECRETS=$(grep -E "password|secret|key" config/.env.example | grep -v "changeme\|example\|your-" | grep -v "^#" || true)
 if [ -n "$SECRETS" ]; then
     echo "❌ WARNING: Potential secrets found in .env.example:"
     echo "$SECRETS"
@@ -56,7 +63,8 @@ fi
 # Test 5: ensure passwords are not logged
 echo ""
 echo "Test 5: ensure passwords are not logged..."
-PASSWORD_LOGS=$(grep -r -E "logger\.(info|debug|warning|error).*password" src/ --include="*.py" || true)
+# A status-only "***" marker is explicitly safe; any real password value is not.
+PASSWORD_LOGS=$(grep -r -E "logger\.(info|debug|warning|error).*password" src/ --include="*.py" | grep -v "\*\*\*" || true)
 if [ -n "$PASSWORD_LOGS" ]; then
     echo "❌ WARNING: Passwords may be logged in these locations:"
     echo "$PASSWORD_LOGS"
@@ -78,7 +86,7 @@ fi
 # Test 7: .env.example exists
 echo ""
 echo "Test 7: .env.example exists..."
-if [ -f .env.example ]; then
+if [ -f config/.env.example ]; then
     echo "✅ .env.example exists"
 else
     echo "❌ ERROR: .env.example is missing!"
@@ -88,11 +96,48 @@ fi
 # Test 8: security documentation present
 echo ""
 echo "Test 8: security documentation present..."
-if [ -f docs/security-review.md ]; then
-    echo "✅ Security review documentation present"
+if [ -f .github/SECURITY.md ]; then
+    echo "✅ Security policy present"
 else
-    echo "⚠️  NOTICE: docs/security-review.md is missing"
+    echo "⚠️  NOTICE: .github/SECURITY.md is missing"
 fi
+
+# Tool-backed checks intentionally have no global rule exclusions. The only
+# current Bandit exceptions are documented inline with their safe home-network
+# binding rationale.
+echo ""
+echo "Test 9: Bandit static analysis..."
+"$PYTHON_BIN" -m bandit -r src/ -ll -ii -f json -o bandit-report.json
+echo "✅ Bandit found no medium/high findings"
+
+echo ""
+echo "Test 10: audit locked production dependencies..."
+AUDIT_CACHE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/smarttub-mqtt-pip-audit.XXXXXX")"
+AUDIT_REQUIREMENTS="$(mktemp "${TMPDIR:-/tmp}/smarttub-mqtt-audit-requirements.XXXXXX")"
+trap 'rm -rf "$AUDIT_CACHE_DIR" "$AUDIT_REQUIREMENTS"' EXIT
+# python-smarttub is locked to an immutable Git commit and intentionally has
+# no PyPI record. pip-audit cannot query it, so audit every registry-published
+# production dependency rather than silently weakening the complete audit.
+grep -v '^python-smarttub @ git+' requirements.lock > "$AUDIT_REQUIREMENTS"
+"$PYTHON_BIN" -m pip_audit --requirement "$AUDIT_REQUIREMENTS" --no-deps --strict \
+    --cache-dir "$AUDIT_CACHE_DIR" --format json --output pip-audit-report.json
+echo "✅ Registry-published locked production dependencies passed pip-audit"
+
+echo ""
+echo "Test 11: compare repository secrets with reviewed baseline..."
+SECRET_SCAN_FILES=()
+while IFS= read -r -d '' file; do
+    SECRET_SCAN_FILES+=("$file")
+done < <(git ls-files --cached --others --exclude-standard -z)
+"$PYTHON_BIN" -m detect_secrets scan --slim \
+    --exclude-files '^\.secrets\.baseline$' "${SECRET_SCAN_FILES[@]}" > .secrets.baseline.current
+if ! diff --unified .secrets.baseline .secrets.baseline.current; then
+    rm -f .secrets.baseline.current
+    echo "❌ New potential secret detected; review and intentionally update .secrets.baseline"
+    exit 1
+fi
+rm -f .secrets.baseline.current
+echo "✅ No new potential secrets"
 
 # Ergebnis
 echo ""

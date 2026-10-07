@@ -6,10 +6,11 @@ at startup, before the first live API call.
 """
 
 import logging
-import yaml
 from pathlib import Path
-from typing import List
 
+import yaml
+
+from src.core.discovery_repository import DiscoveryRepository
 from src.mqtt.topic_mapper import MQTTTopicMapper
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class YAMLFallbackPublisher:
     def __init__(
         self,
         topic_mapper: MQTTTopicMapper,
+        discovery_repository: DiscoveryRepository | None = None,
     ):
         """
         Initialize YAML fallback publisher.
@@ -42,12 +44,11 @@ class YAMLFallbackPublisher:
             topic_mapper: MQTT topic mapper for publishing
         """
         self.topic_mapper = topic_mapper
+        self.discovery_repository = discovery_repository or DiscoveryRepository()
 
         logger.info("YAMLFallbackPublisher initialized")
 
-    async def publish_from_yaml(
-        self, yaml_path: Path = Path("/config/discovered_items.yaml")
-    ) -> bool:
+    async def publish_from_yaml(self, yaml_path: Path | None = None) -> bool:
         """
         Load discovered_items.yaml and publish light metadata.
 
@@ -58,21 +59,24 @@ class YAMLFallbackPublisher:
             True if published successfully, False otherwise
         """
         try:
-            # Check if YAML exists
-            if not yaml_path.exists():
+            repository = (
+                DiscoveryRepository(yaml_path)
+                if yaml_path is not None
+                else self.discovery_repository
+            )
+            data = await repository.read_async()
+            if not data:
                 logger.warning(
-                    f"YAML file not found: {yaml_path} - skipping fallback publishing"
+                    "YAML file not found: %s - skipping fallback publishing",
+                    repository.path,
                 )
                 return False
 
-            # Load YAML
-            logger.info(f"Loading discovered items from {yaml_path}")
-            with open(yaml_path, "r") as f:
-                data = yaml.safe_load(f)
+            logger.info("Loading discovered items from %s", repository.path)
 
             if not data or "discovered_items" not in data:
                 logger.warning(
-                    f"Invalid YAML structure in {yaml_path} - missing 'discovered_items' key"
+                    f"Invalid YAML structure in {repository.path} - missing 'discovered_items' key"
                 )
                 return False
 
@@ -118,12 +122,12 @@ class YAMLFallbackPublisher:
             logger.error(f"YAML parsing error: {e}")
             return False
 
-        except Exception as e:
-            logger.error(f"Error publishing from YAML: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Error publishing from YAML")
             return False
 
     async def _publish_light_meta(
-        self, spa_id: str, light_id: str, detected_modes: List[str]
+        self, spa_id: str, light_id: str, detected_modes: list[str]
     ):
         """
         Publish light metadata to MQTT.
@@ -142,7 +146,7 @@ class YAMLFallbackPublisher:
             payload = ",".join(detected_modes) if detected_modes else ""
 
             # Publish via topic mapper's MQTT client
-            self.topic_mapper.mqtt_client.publish(
+            self.topic_mapper.mqtt_client.publish_sync(
                 topic=topic, payload=payload, qos=1, retain=True
             )
 
@@ -151,8 +155,5 @@ class YAMLFallbackPublisher:
                 f"{len(detected_modes)} modes"
             )
 
-        except Exception as e:
-            logger.error(
-                f"Error publishing light meta for {spa_id}/{light_id}: {e}",
-                exc_info=True,
-            )
+        except Exception:
+            logger.exception("Error publishing light meta for %s/%s", spa_id, light_id)

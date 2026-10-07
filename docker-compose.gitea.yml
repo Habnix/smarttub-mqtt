@@ -1,0 +1,4 @@
+# Private development image; combine with docker-compose.yml.
+services:
+  smarttub-mqtt:
+    image: "${SMARTTUB_PRIVATE_IMAGE:?Set SMARTTUB_PRIVATE_IMAGE to your private development image}"

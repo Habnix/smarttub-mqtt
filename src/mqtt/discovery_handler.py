@@ -7,7 +7,7 @@ Handles MQTT messages for discovery control and publishes status updates.
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Any
 
 from src.core.discovery_coordinator import DiscoveryCoordinator
 from src.core.discovery_state import DiscoveryState
@@ -42,8 +42,8 @@ class DiscoveryMQTTHandler:
         self,
         coordinator: DiscoveryCoordinator,
         topic_mapper: MQTTTopicMapper,
-        mqtt_client: any,
-        event_loop: Optional[asyncio.AbstractEventLoop] = None,
+        mqtt_client: Any,
+        event_loop: asyncio.AbstractEventLoop | None = None,
     ):
         """
         Initialize MQTT handler.
@@ -63,7 +63,7 @@ class DiscoveryMQTTHandler:
 
         logger.info("DiscoveryMQTTHandler initialized")
 
-    async def start(self):
+    async def start(self) -> None:
         """
         Start MQTT handling.
 
@@ -75,7 +75,7 @@ class DiscoveryMQTTHandler:
 
         # Subscribe to control topic
         control_topic = self.topic_mapper.get_discovery_control_topic()
-        self.mqtt_client.subscribe(
+        await self.mqtt_client.subscribe(
             topic=control_topic, callback=self._on_control_message
         )
         self._subscribed = True
@@ -85,7 +85,7 @@ class DiscoveryMQTTHandler:
         # Publish initial status
         await self.coordinator.publish_status_to_mqtt()
 
-    async def stop(self):
+    async def stop(self) -> None:
         """
         Stop MQTT handling.
 
@@ -93,12 +93,12 @@ class DiscoveryMQTTHandler:
         """
         if self._subscribed:
             control_topic = self.topic_mapper.get_discovery_control_topic()
-            self.mqtt_client.unsubscribe(control_topic)
+            await self.mqtt_client.unsubscribe(control_topic)
             self._subscribed = False
 
             logger.info("Discovery MQTT handler stopped")
 
-    async def _publish_status(self, state: DiscoveryState):
+    async def _publish_status(self, state: DiscoveryState) -> None:
         """
         Publish discovery status to MQTT.
 
@@ -112,16 +112,16 @@ class DiscoveryMQTTHandler:
 
             # Publish all messages
             for msg in messages:
-                self.mqtt_client.publish(
+                self.mqtt_client.publish_sync(
                     topic=msg.topic, payload=msg.payload, qos=msg.qos, retain=msg.retain
                 )
 
             logger.debug(f"Published {len(messages)} discovery status messages")
 
-        except Exception as e:
-            logger.error(f"Failed to publish discovery status: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Failed to publish discovery status")
 
-    def _on_control_message(self, topic: str, payload: bytes):
+    def _on_control_message(self, topic: str, payload: bytes) -> None:
         """
         Handle control messages from MQTT.
 
@@ -181,12 +181,10 @@ class DiscoveryMQTTHandler:
                     self._handle_stop_command(), self._event_loop
                 )
 
-        except Exception as e:
-            logger.error(
-                f"Error handling discovery control message: {e}", exc_info=True
-            )
+        except Exception:
+            logger.exception("Error handling discovery control message")
 
-    async def _handle_start_command(self, mode: str):
+    async def _handle_start_command(self, mode: str) -> None:
         """
         Handle start command asynchronously.
 
@@ -203,10 +201,10 @@ class DiscoveryMQTTHandler:
                     f"Failed to start discovery via MQTT: {result.get('error')}"
                 )
 
-        except Exception as e:
-            logger.error(f"Error starting discovery via MQTT: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Error starting discovery via MQTT")
 
-    async def _handle_stop_command(self):
+    async def _handle_stop_command(self) -> None:
         """
         Handle stop command asynchronously.
         """
@@ -220,5 +218,5 @@ class DiscoveryMQTTHandler:
                     f"Failed to stop discovery via MQTT: {result.get('error')}"
                 )
 
-        except Exception as e:
-            logger.error(f"Error stopping discovery via MQTT: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Error stopping discovery via MQTT")

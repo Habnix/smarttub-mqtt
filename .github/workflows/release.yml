@@ -6,103 +6,196 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Do not interrupt an image publication already in progress.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  # ============================================================================
-  # Build and Push Docker Image
-  # ============================================================================
-  docker-release:
-    name: Build & Push Docker Image
+  preflight:
+    name: Verify release prerequisites
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
+      - name: Verify tag, version and required credentials
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *) echo "Select a release tag when running this workflow manually" >&2; exit 1 ;;
+          esac
+          tag_version="${GITHUB_REF#refs/tags/v}"
+          source_version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/core/version.py)"
+          test -n "$source_version"
+          test "$tag_version" = "$source_version"
+          for required in DOCKERHUB_USERNAME DOCKERHUB_TOKEN COSIGN_PRIVATE_KEY; do
+            if [ -z "${!required}" ]; then
+              echo "$required must be configured before publishing a release" >&2
+              exit 1
+            fi
+          done
+
+  checks:
+    name: Release quality gate
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  docker-release:
+    name: Build, publish and sign Docker Hub image
+    needs: checks
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Read canonical application version
+        id: version
+        run: echo "value=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/core/version.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Validate signing key before image publication
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: cosign public-key --key env://COSIGN_PRIVATE_KEY > cosign.pub
+
+      - name: Set up QEMU for ARM64
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: willnix/smarttub-mqtt
+          # Latest is deliberate; installations should pin the full version.
+          flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      
+            type=raw,value=latest
+
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
-      
-      - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+          platforms: linux/amd64,linux/arm64
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
 
-  # ============================================================================
-  # Create GitHub Release
-  # ============================================================================
+      - name: Sign multi-architecture image digest
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "willnix/smarttub-mqtt@$IMAGE_DIGEST"
+
+      - name: Preserve public verification key
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosign-public-key
+          path: cosign.pub
+          if-no-files-found: error
+
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: docker-release
     permissions:
       contents: write
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-      
+
+      - name: Download public verification key
+        uses: actions/download-artifact@v4
+        with:
+          name: cosign-public-key
+
+      - name: Prepare release notes from changelog
+        env:
+          RELEASE_VERSION: ${{ needs.docker-release.outputs.version }}
+          IMAGE_DIGEST: ${{ needs.docker-release.outputs.image_digest }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          version = os.environ['RELEASE_VERSION']
+          digest = os.environ['IMAGE_DIGEST']
+          changelog = Path('CHANGELOG.md').read_text()
+          marker = f'## [{version}]'
+          if marker not in changelog:
+              raise SystemExit(f'Missing changelog section: {marker}')
+          changes = changelog.split(marker, 1)[1].split('\n## [', 1)[0]
+          changes = changes.split('\n', 1)[1].strip()
+          notes = f'''## SmartTub-MQTT {version}
+
+          Docker Hub image (Linux AMD64 and ARM64):
+
+          ```bash
+          docker pull willnix/smarttub-mqtt:{version}
+          ```
+
+          Immutable image digest:
+
+          ```text
+          willnix/smarttub-mqtt@{digest}
+          ```
+
+          Verify the signature using the attached `cosign.pub`:
+
+          ```bash
+          cosign verify --key cosign.pub willnix/smarttub-mqtt@{digest}
+          ```
+
+          SBOM and build provenance are attached to the image.
+          Back up `config/` before upgrading from 0.3.3. Existing MQTT/OpenHAB
+          integrations should be checked against the updated topic and command contracts.
+
+          [Container setup](https://github.com/Habnix/smarttub-mqtt/blob/v{version}/docs/dockerhub.md)
+          | [Configuration](https://github.com/Habnix/smarttub-mqtt/blob/v{version}/config/.env.example)
+
+          {changes}
+          '''
+          # YAML removes the run block indentation before Python sees this text.
+          Path('release-notes.md').write_text(notes)
+          PY
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: SmartTub-MQTT ${{ steps.version.outputs.VERSION }}
-          body: |
-            ## SmartTub-MQTT v${{ steps.version.outputs.VERSION }}
-            
-            ### Docker Image
-            
-            ```bash
-            docker pull willnix/smarttub-mqtt:${{ steps.version.outputs.VERSION }}
-            ```
-            
-            ### Quick Start
-            
-            ```bash
-            # Pull latest
-            docker pull willnix/smarttub-mqtt:latest
-            
-            # Run with docker-compose
-            cd deploy/
-            docker-compose up -d
-            ```
-            
-            ### Documentation
-            
-            - [README](https://github.com/${{ github.repository }}/blob/main/README.md)
-            - [Configuration Guide](https://github.com/${{ github.repository }}/blob/main/docs/configuration.md)
-            - [Deployment Guide](https://github.com/${{ github.repository }}/blob/main/deploy/README.md)
-            
-            ### Changelog
-            
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          name: SmartTub-MQTT ${{ needs.docker-release.outputs.version }}
+          body_path: release-notes.md
+          files: cosign.pub
+          fail_on_unmatched_files: true
           draft: false
           prerelease: false

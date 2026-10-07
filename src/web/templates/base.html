@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SmartTub MQTT Bridge{% endblock %}</title>
+    <link href="/static/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/app.css" rel="stylesheet">
+    {% block page_styles %}{% endblock %}
+</head>
+<body class="{% block body_class %}bg-light{% endblock %}" {% block body_attributes %}{% endblock %}>
+    {% include '_navigation.html' %}
+
+    {% block content %}{% endblock %}
+
+    <script src="/static/ui.js"></script>
+    {% block page_scripts %}{% endblock %}
+</body>
+</html>

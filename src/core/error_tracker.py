@@ -2,12 +2,12 @@
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Dict, List, Optional, Any
 from threading import Lock
-
+from typing import Any
 
 logger = logging.getLogger("smarttub.core")
 
@@ -44,28 +44,26 @@ class ErrorEntry:
     severity: ErrorSeverity
     message: str
     timestamp: float = field(default_factory=time.time)
-    error_code: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
+    error_code: str | None = None
+    details: dict[str, Any] | None = None
     recovery_attempted: bool = False
-    recovery_successful: Optional[bool] = None
-    recovery_timestamp: Optional[float] = None
+    recovery_successful: bool | None = None
+    recovery_timestamp: float | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert error entry to dictionary."""
         return {
             "category": self.category.value,
             "severity": self.severity.value,
             "message": self.message,
-            "timestamp": datetime.fromtimestamp(
-                self.timestamp, tz=timezone.utc
-            ).isoformat(),
+            "timestamp": datetime.fromtimestamp(self.timestamp, tz=UTC).isoformat(),
             "error_code": self.error_code,
             "details": self.details or {},
             "recovery": {
                 "attempted": self.recovery_attempted,
                 "successful": self.recovery_successful,
                 "timestamp": datetime.fromtimestamp(
-                    self.recovery_timestamp, tz=timezone.utc
+                    self.recovery_timestamp, tz=UTC
                 ).isoformat()
                 if self.recovery_timestamp
                 else None,
@@ -87,10 +85,12 @@ class ErrorTracker:
             max_errors: Maximum number of errors to keep in memory (FIFO)
         """
         self._max_errors = max_errors
-        self._errors: List[ErrorEntry] = []
-        self._error_counts: Dict[ErrorCategory, int] = {}
-        self._last_error_time: Dict[ErrorCategory, float] = {}
-        self._recovery_callbacks: Dict[ErrorCategory, List[callable]] = {}
+        self._errors: list[ErrorEntry] = []
+        self._error_counts: dict[ErrorCategory, int] = {}
+        self._last_error_time: dict[ErrorCategory, float] = {}
+        self._recovery_callbacks: dict[
+            ErrorCategory, list[Callable[[ErrorEntry], bool]]
+        ] = {}
         self._lock = Lock()
 
         # Initialize counts
@@ -102,8 +102,8 @@ class ErrorTracker:
         category: ErrorCategory,
         message: str,
         severity: ErrorSeverity = ErrorSeverity.ERROR,
-        error_code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> ErrorEntry:
         """Track a new error.
 
@@ -152,7 +152,9 @@ class ErrorTracker:
         return entry
 
     def attempt_recovery(
-        self, category: ErrorCategory, recovery_action: Optional[callable] = None
+        self,
+        category: ErrorCategory,
+        recovery_action: Callable[[], bool] | None = None,
     ) -> bool:
         """Attempt recovery for a specific error category.
 
@@ -189,12 +191,12 @@ class ErrorTracker:
                         if callback(error_entry):
                             success = True
                             break
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.warning(
                             f"Recovery callback failed for {category.value}: {e}"
                         )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Recovery action failed for {category.value}: {e}")
             success = False
 
@@ -209,7 +211,7 @@ class ErrorTracker:
         return success
 
     def register_recovery_callback(
-        self, category: ErrorCategory, callback: callable
+        self, category: ErrorCategory, callback: Callable[[ErrorEntry], bool]
     ) -> None:
         """Register a recovery callback for a specific category.
 
@@ -223,10 +225,10 @@ class ErrorTracker:
 
     def get_errors(
         self,
-        category: Optional[ErrorCategory] = None,
-        severity: Optional[ErrorSeverity] = None,
-        limit: Optional[int] = None,
-    ) -> List[ErrorEntry]:
+        category: ErrorCategory | None = None,
+        severity: ErrorSeverity | None = None,
+        limit: int | None = None,
+    ) -> list[ErrorEntry]:
         """Get errors filtered by category and/or severity.
 
         Args:
@@ -255,7 +257,7 @@ class ErrorTracker:
 
         return errors
 
-    def get_error_summary(self) -> Dict[str, Any]:
+    def get_error_summary(self) -> dict[str, Any]:
         """Get summary of all errors.
 
         Returns:
@@ -265,7 +267,7 @@ class ErrorTracker:
             total_errors = len(self._errors)
             category_counts = dict(self._error_counts)
             last_error_times = {
-                cat.value: datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                cat.value: datetime.fromtimestamp(ts, tz=UTC).isoformat()
                 for cat, ts in self._last_error_time.items()
             }
 
@@ -291,7 +293,7 @@ class ErrorTracker:
             "recent_errors": recent,
         }
 
-    def clear_errors(self, category: Optional[ErrorCategory] = None) -> int:
+    def clear_errors(self, category: ErrorCategory | None = None) -> int:
         """Clear errors, optionally filtered by category.
 
         Args:
@@ -321,7 +323,7 @@ class ErrorTracker:
         )
         return cleared
 
-    def get_subsystem_status(self) -> Dict[str, str]:
+    def get_subsystem_status(self) -> dict[str, str]:
         """Get status of all subsystems based on error state.
 
         Returns:

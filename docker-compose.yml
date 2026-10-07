@@ -1,11 +1,11 @@
 services:
   smarttub-mqtt:
-    # Use Docker Hub image (v0.3.1)
+    # Public Docker Hub release; update this explicit SemVer tag on upgrade.
     # build: .
-    image: willnix/smarttub-mqtt:latest
+    image: willnix/smarttub-mqtt:0.4.0
     container_name: smarttub-mqtt
-    # Temporarily disabled to avoid rate limiting during testing
-    # restart: unless-stopped
+    # Restart after a host/container restart, but retain operator-controlled stops.
+    restart: unless-stopped
     
     # Mount config directory containing .env
     volumes:
@@ -38,7 +38,7 @@ services:
     
     # Health check
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()\" || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/live').read()\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -53,7 +53,7 @@ services:
 
 # Optional: Uncomment to add local MQTT broker
 #  mosquitto:
-#    image: eclipse-mosquitto:latest
+#    image: eclipse-mosquitto:2.1.2-alpine
 #    container_name: mosquitto
 #    restart: unless-stopped
 #    ports:

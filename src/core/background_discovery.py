@@ -7,21 +7,29 @@ and graceful shutdown support.
 
 import asyncio
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, Dict, Any
-import yaml
+from datetime import UTC, datetime
+from functools import partial
+from typing import Any
 
+from src.core.config_loader import AppConfig
+from src.core.discovery_recovery import DiscoveryRecoveryJournal
+from src.core.discovery_result_store import DiscoveryResultStore
 from src.core.discovery_state import (
-    DiscoveryStateManager,
-    DiscoveryStatus,
     DiscoveryMode,
     DiscoveryResults,
+    DiscoveryStateManager,
+    DiscoveryStatus,
 )
+from src.core.light_discovery_engine import LightDiscoveryEngine
+from src.core.light_mode_catalog import is_mode_detected, light_modes_for_discovery
 from src.core.smarttub_client import SmartTubClient
-from src.core.config_loader import AppConfig
+from src.core.smarttub_gateway import SmartTubGateway
 
 logger = logging.getLogger(__name__)
+
+
+class DiscoveryError(RuntimeError):
+    """Base error for expected discovery failures."""
 
 
 class BackgroundDiscoveryRunner:
@@ -53,6 +61,8 @@ class BackgroundDiscoveryRunner:
         state_manager: DiscoveryStateManager,
         smarttub_client: SmartTubClient,
         config: AppConfig,
+        *,
+        recovery_journal: DiscoveryRecoveryJournal | None = None,
     ):
         """
         Initialize background discovery runner.
@@ -65,29 +75,36 @@ class BackgroundDiscoveryRunner:
         self.state_manager = state_manager
         self.smarttub_client = smarttub_client
         self.config = config
+        self.gateway = getattr(smarttub_client, "gateway", SmartTubGateway())
 
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task[Any] | None = None
         self._stop_event = asyncio.Event()
         self._start_lock = asyncio.Lock()  # Prevent concurrent starts
 
         # Discovery configuration
-        self.yaml_path = Path("/config/discovered_items.yaml")
+        self.result_store = DiscoveryResultStore()
+        self.recovery_journal = recovery_journal or DiscoveryRecoveryJournal()
+        self.discovery_engine = LightDiscoveryEngine(
+            config,
+            gateway=self.gateway,
+            recovery_journal=self.recovery_journal,
+        )
 
         # Mode-specific test configurations
         self.mode_configs = {
             DiscoveryMode.FULL: {
                 "test_modes": True,
-                "modes_to_test": "all",  # Test all 18 modes
-                "wait_time": 20,  # Extra wait after timeout (SmartTub Cloud API is VERY slow)
+                "catalogue_mode": "full",
+                "wait_time": 8,
             },
             DiscoveryMode.QUICK: {
                 "test_modes": True,
-                "modes_to_test": ["OFF", "ON", "PURPLE", "WHITE"],  # Test 4 modes
-                "wait_time": 20,  # Extra wait after timeout
+                "catalogue_mode": "quick",
+                "wait_time": 8,
             },
             DiscoveryMode.YAML_ONLY: {
                 "test_modes": False,
-                "modes_to_test": [],
+                "catalogue_mode": "yaml_only",
                 "wait_time": 0,
             },
         }
@@ -105,7 +122,7 @@ class BackgroundDiscoveryRunner:
 
     async def start_discovery(
         self, mode: DiscoveryMode = DiscoveryMode.QUICK
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Start background discovery process.
 
@@ -125,6 +142,19 @@ class BackgroundDiscoveryRunner:
                     "error": "Discovery already running",
                 }
 
+            try:
+                await self._recover_pending_lights()
+            except Exception as exc:
+                logger.exception("Discovery recovery must complete before a new run")
+                return {
+                    "success": False,
+                    "error": (
+                        "A previous discovery state could not be restored; "
+                        "manual recovery is required"
+                    ),
+                    "details": type(exc).__name__,
+                }
+
             # Reset stop event
             self._stop_event.clear()
 
@@ -133,7 +163,7 @@ class BackgroundDiscoveryRunner:
                 {
                     "status": DiscoveryStatus.RUNNING,
                     "mode": mode,
-                    "started_at": datetime.now(),
+                    "started_at": datetime.now(UTC),
                     "error": None,
                 }
             )
@@ -146,10 +176,10 @@ class BackgroundDiscoveryRunner:
         return {
             "success": True,
             "mode": mode.value,
-            "started_at": datetime.now().isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
         }
 
-    async def stop_discovery(self) -> Dict[str, Any]:
+    async def stop_discovery(self) -> dict[str, Any]:
         """
         Stop running discovery process gracefully.
 
@@ -169,13 +199,17 @@ class BackgroundDiscoveryRunner:
         self._stop_event.set()
 
         # Wait for task to complete (with timeout)
+        task = self._task
+        if task is None:
+            return {"success": False, "error": "No discovery running"}
+
         try:
-            await asyncio.wait_for(self._task, timeout=10.0)
-        except asyncio.TimeoutError:
+            await asyncio.wait_for(task, timeout=10.0)
+        except TimeoutError:
             logger.warning("Discovery task did not stop gracefully, cancelling")
-            self._task.cancel()
+            task.cancel()
             try:
-                await self._task
+                await task
             except asyncio.CancelledError:
                 pass
 
@@ -191,7 +225,7 @@ class BackgroundDiscoveryRunner:
 
         return {
             "success": True,
-            "stopped_at": datetime.now().isoformat(),
+            "stopped_at": datetime.now(UTC).isoformat(),
         }
 
     async def _run_discovery_loop(self, mode: DiscoveryMode):
@@ -203,20 +237,21 @@ class BackgroundDiscoveryRunner:
         """
         try:
             logger.info(f"Starting discovery loop in {mode.value} mode")
+            started_at = datetime.now(UTC)
 
             # Get mode configuration
-            mode_config = self.mode_configs[mode]
+            mode_config: dict[str, Any] = self.mode_configs[mode]
 
             # Load spas from client
             spas = self.smarttub_client.spas
 
             if not spas:
-                raise Exception("No spas found in account")
+                raise DiscoveryError("No spas found in account")
 
             logger.info(f"Found {len(spas)} spa(s)")
 
             # Process each spa
-            results = {"spas": {}}
+            results: dict[str, Any] = {"spas": {}}
 
             for spa in spas:
                 spa_id = spa.id
@@ -240,22 +275,13 @@ class BackgroundDiscoveryRunner:
                 logger.info(f"Found {len(lights)} light(s) for spa {spa_id}")
 
                 # Initialize spa results
-                spa_results = {"spa_id": spa_id, "lights": []}
+                spa_results: dict[str, Any] = {"spa_id": spa_id, "lights": []}
 
                 # Calculate total modes to test
                 if mode_config["test_modes"]:
-                    if mode_config["modes_to_test"] == "all":
-                        # Import light modes dynamically
-                        try:
-                            from smarttub import SpaLight
-
-                            all_modes = [m.name for m in SpaLight.LightMode]
-                            modes_to_test = all_modes
-                        except Exception as e:
-                            logger.error(f"Could not load light modes: {e}")
-                            modes_to_test = []
-                    else:
-                        modes_to_test = mode_config["modes_to_test"]
+                    modes_to_test = list(
+                        light_modes_for_discovery(mode_config["catalogue_mode"])
+                    )
 
                     total_modes = len(lights) * len(modes_to_test)
                 else:
@@ -287,47 +313,28 @@ class BackgroundDiscoveryRunner:
                         "id": light_id,
                         "zone": light.zone,
                         "detected_modes": [],
+                        "mode_results": {},
                     }
-
-                    # Test modes if enabled
+                    # Test modes if enabled. The shared engine owns state capture,
+                    # journalling and verified restoration around this callback.
                     if mode_config["test_modes"]:
-                        logger.info(
-                            f"Testing {len(modes_to_test)} modes for {light_id}"
-                        )
-                        logger.info(
-                            f"Modes to test: {modes_to_test[:3]}..."
-                        )  # DEBUG: Show first 3 modes
-
-                        for mode_name in modes_to_test:
-                            logger.info(
-                                f"Testing mode {mode_name} on {light_id}"
-                            )  # DEBUG
-
-                            # Check stop signal
-                            if self._stop_event.is_set():
-                                logger.info("Stop signal received, aborting discovery")
-                                return
-
-                            # Test this mode
-                            success = await self._test_light_mode(
+                        stopped, restored = await self.discovery_engine.run_probe(
+                            str(spa_id),
+                            light,
+                            partial(
+                                self._probe_selected_modes,
                                 light=light,
-                                mode_name=mode_name,
+                                light_id=light_id,
+                                modes=tuple(modes_to_test),
                                 wait_time=mode_config["wait_time"],
-                            )
-
-                            if success:
-                                light_results["detected_modes"].append(mode_name)
-                                logger.debug(f"Mode {mode_name} works for {light_id}")
-                            else:
-                                logger.info(
-                                    f"Mode {mode_name} failed for {light_id}"
-                                )  # DEBUG
-
-                            # Update progress
-                            state = await self.state_manager.get_state()
-                            await self.state_manager.update_progress(
-                                modes_tested=state.progress.modes_tested + 1
-                            )
+                                light_results=light_results,
+                            ),
+                        )
+                        light_results["state_restored"] = restored
+                        if stopped:
+                            return
+                    else:
+                        light_results["state_restored"] = None
 
                     # Add light to results
                     spa_results["lights"].append(light_results)
@@ -341,25 +348,37 @@ class BackgroundDiscoveryRunner:
                 results["spas"][spa_id] = spa_results
 
             # Save results to YAML
-            yaml_path = await self._save_results_to_yaml(results)
+            completed_at = datetime.now(UTC)
+            total_lights = sum(len(s["lights"]) for s in results["spas"].values())
+            total_modes_detected = sum(
+                len(light["detected_modes"])
+                for spa in results["spas"].values()
+                for light in spa["lights"]
+            )
+            yaml_path = await self.result_store.save_light_modes_async(
+                results,
+                run_metadata={
+                    "mode": mode.value,
+                    "started_at": started_at.isoformat(),
+                    "completed_at": completed_at.isoformat(),
+                    "total_lights": total_lights,
+                    "total_modes_detected": total_modes_detected,
+                },
+            )
 
             # Create discovery results
             discovery_results = DiscoveryResults(
                 spas=results["spas"],
                 yaml_path=str(yaml_path),
-                total_lights=sum(len(s["lights"]) for s in results["spas"].values()),
-                total_modes_detected=sum(
-                    len(light["detected_modes"])
-                    for spa in results["spas"].values()
-                    for light in spa["lights"]
-                ),
+                total_lights=total_lights,
+                total_modes_detected=total_modes_detected,
             )
 
             # Update state to completed
             await self.state_manager.update_state(
                 {
                     "status": DiscoveryStatus.COMPLETED,
-                    "completed_at": datetime.now(),
+                    "completed_at": completed_at,
                     "results": discovery_results,
                 }
             )
@@ -370,209 +389,79 @@ class BackgroundDiscoveryRunner:
             )
 
         except Exception as e:
-            logger.exception(f"Discovery failed: {e}")
+            logger.exception("Discovery failed")
 
             # Update state to failed
             await self.state_manager.update_state(
                 {
                     "status": DiscoveryStatus.FAILED,
-                    "completed_at": datetime.now(),
+                    "completed_at": datetime.now(UTC),
                     "error": str(e),
                 }
             )
 
-    async def _test_light_mode(self, light, mode_name: str, wait_time: int) -> bool:
-        """
-        Test a single light mode.
+    @staticmethod
+    def _capture_light_state(light: Any) -> dict[str, Any] | None:
+        """Compatibility wrapper around the shared discovery engine."""
+        return LightDiscoveryEngine.capture_light_state(light)
 
-        Uses the proven v0.2.3 approach:
-        1. Try light.set_mode() (has built-in 10s wait)
-        2. If timeout: wait extra time and verify manually
-        3. Check mode matches (ignore intensity)
-
-        Args:
-            light: Light object
-            mode_name: Mode name to test
-            wait_time: Extra wait time if set_mode times out
-
-        Returns:
-            True if mode works, False otherwise
-        """
-        try:
-            # Import dynamically
-            from smarttub import SpaLight
-
-            # Get mode enum
-            try:
-                mode = SpaLight.LightMode[mode_name]
-            except KeyError:
-                logger.warning(f"Unknown mode: {mode_name}")
-                return False
-
-            # Try using light.set_mode() (includes built-in state verification)
-            try:
-                # OFF mode requires intensity=0, others use 50
-                intensity = 0 if mode_name == "OFF" else 50
-                logger.info(f"Calling set_mode({mode_name}, {intensity})...")
-                await light.set_mode(mode, intensity=intensity)
-                # Success - mode was set and verified
-                logger.info(f"Mode {mode_name} verified by set_mode()")
+    async def _probe_selected_modes(
+        self,
+        *,
+        light: Any,
+        light_id: str,
+        modes: tuple[str, ...],
+        wait_time: int,
+        light_results: dict[str, Any],
+    ) -> bool:
+        """Probe selected modes; return whether a stop was requested."""
+        logger.info("Testing %s modes for %s", len(modes), light_id)
+        for mode_name in modes:
+            logger.info("Testing mode %s on %s", mode_name, light_id)
+            if self._stop_event.is_set():
+                logger.info("Stop signal received, aborting discovery")
                 return True
 
-            except Exception as e:
-                error_str = str(e)
-                logger.info(f"set_mode() raised: {error_str[:100]}")
+            test_result = await self._test_light_mode(
+                light=light,
+                mode_name=mode_name,
+                wait_time=wait_time,
+            )
+            light_results["mode_results"][mode_name] = test_result
+            if is_mode_detected(test_result["status"]):
+                light_results["detected_modes"].append(mode_name)
 
-                # Check for API rejection (invalid mode)
-                if "400" in error_str or "404" in error_str:
-                    logger.debug(f"API rejected mode {mode_name}: {e}")
-                    return False
+            state = await self.state_manager.get_state()
+            await self.state_manager.update_progress(
+                modes_tested=state.progress.modes_tested + 1
+            )
+        return False
 
-                # State change timeout - common for slow API
-                # Solution: Wait extra time and verify manually with retries
-                if (
-                    "State change not reflected" in error_str
-                    or "timeout" in error_str.lower()
-                ):
-                    logger.info(
-                        f"Mode {mode_name} timed out - verifying manually with retries..."
-                    )
+    async def _restore_and_clear(
+        self,
+        spa_id: str,
+        light: Any,
+        original_state: dict[str, Any] | None,
+    ) -> bool | None:
+        """Compatibility wrapper around the shared discovery engine."""
+        return await self.discovery_engine.restore_and_clear(
+            spa_id, light, original_state
+        )
 
-                    # Try multiple times with increasing delays
-                    for attempt in range(3):
-                        wait = wait_time + (attempt * 5)  # 20s, 25s, 30s
-                        logger.debug(
-                            f"Verification attempt {attempt + 1}/3, waiting {wait}s..."
-                        )
-                        await asyncio.sleep(
-                            wait if attempt == 0 else 5
-                        )  # First wait full, then +5s each
+    async def _recover_pending_lights(self) -> None:
+        """Restore an interrupted discovery before accepting another run."""
+        await self.discovery_engine.recover_pending(self.smarttub_client.spas)
 
-                        try:
-                            # Refresh spa status to get current light state
-                            status = await light.spa.get_status_full()
-                            logger.debug(
-                                f"Got status, checking {len(status.lights)} lights..."
-                            )
+    async def _restore_light_state_safely(
+        self, light: Any, original_state: dict[str, Any] | None
+    ) -> bool | None:
+        """Compatibility wrapper around the shared discovery engine."""
+        return await self.discovery_engine.restore_light_state(light, original_state)
 
-                            # Find our light in the status
-                            for status_light in status.lights:
-                                if status_light.zone == light.zone:
-                                    current_mode = status_light.mode
-                                    current_mode_name = (
-                                        current_mode.name if current_mode else "None"
-                                    )
-                                    logger.debug(
-                                        f"Light zone {light.zone}: Expected={mode_name}, Got={current_mode_name}"
-                                    )
-
-                                    if current_mode and current_mode.name == mode_name:
-                                        logger.info(
-                                            f"Mode {mode_name} verified manually (attempt {attempt + 1})"
-                                        )
-                                        return True
-
-                                    # Wrong mode, continue trying
-                                    logger.debug(
-                                        f"Mode mismatch on attempt {attempt + 1}: expected {mode_name}, got {current_mode_name}"
-                                    )
-                                    break
-                            else:
-                                logger.warning(
-                                    f"Light zone {light.zone} not found in status"
-                                )
-
-                        except Exception as verify_error:
-                            logger.warning(
-                                f"Verification attempt {attempt + 1} exception: {verify_error}"
-                            )
-
-                    # All attempts failed
-                    logger.info(
-                        f"Mode {mode_name} verification failed after 3 attempts"
-                    )
-                    return False
-
-                # Other errors
-                logger.error(f"Mode {mode_name} failed: {e}")
-                return False
-
-        except Exception as e:
-            logger.error(f"Mode {mode_name} test exception: {e}")
-            return False
-
-    async def _save_results_to_yaml(self, results: Dict[str, Any]) -> Path:
-        """
-        Save discovery results to YAML file.
-
-        Merges with existing data to preserve pumps, reminders, etc.
-        Only updates the 'lights' section for each spa.
-
-        Args:
-            results: Discovery results
-
-        Returns:
-            Path to saved YAML file
-        """
-        try:
-            # Ensure directory exists
-            self.yaml_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Load existing data if file exists
-            existing_data = {"discovered_items": {}}
-            if self.yaml_path.exists():
-                try:
-                    with open(self.yaml_path, "r") as f:
-                        existing_data = yaml.safe_load(f) or {"discovered_items": {}}
-                        if "discovered_items" not in existing_data:
-                            existing_data = {"discovered_items": {}}
-                    logger.debug(f"Loaded existing data from {self.yaml_path}")
-                except Exception as e:
-                    logger.warning(f"Could not load existing YAML, starting fresh: {e}")
-                    existing_data = {"discovered_items": {}}
-
-            # Update only the lights section for each spa
-            for spa_id, spa_data in results["spas"].items():
-                # Ensure spa entry exists
-                if spa_id not in existing_data["discovered_items"]:
-                    existing_data["discovered_items"][spa_id] = {}
-
-                # Get existing lights (if any)
-                existing_lights = existing_data["discovered_items"][spa_id].get(
-                    "lights", []
-                )
-
-                # Update detected_modes in existing lights, preserving all other fields
-                for new_light in spa_data["lights"]:
-                    light_id = new_light["id"]
-                    new_modes = new_light["detected_modes"]
-
-                    # Find existing light entry
-                    found = False
-                    for existing_light in existing_lights:
-                        if existing_light.get("id") == light_id:
-                            # Update only detected_modes, preserve everything else (raw, etc.)
-                            existing_light["detected_modes"] = new_modes
-                            found = True
-                            break
-
-                    # If light not found in existing data, add it (shouldn't happen but safety net)
-                    if not found:
-                        existing_lights.append(
-                            {"id": light_id, "detected_modes": new_modes}
-                        )
-
-                # Save updated lights back
-                existing_data["discovered_items"][spa_id]["lights"] = existing_lights
-
-            # Save merged data to YAML
-            with open(self.yaml_path, "w") as f:
-                yaml.dump(existing_data, f, default_flow_style=False, sort_keys=False)
-
-            logger.info(f"Discovery results merged and saved to {self.yaml_path}")
-            return self.yaml_path
-            return self.yaml_path
-
-        except Exception as e:
-            logger.error(f"Failed to save YAML: {e}")
-            raise
+    async def _test_light_mode(
+        self, light: Any, mode_name: str, wait_time: int
+    ) -> dict[str, Any]:
+        """Compatibility wrapper around the shared discovery engine."""
+        return await self.discovery_engine.test_mode(
+            light, mode_name, wait_time=wait_time
+        )

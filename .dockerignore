@@ -41,6 +41,7 @@ MANIFEST
 
 # Environments
 .env
+docker-run.env
 .venv
 env/
 venv/
@@ -55,7 +56,7 @@ log/
 
 # Config
 config/
-!config/example.yaml
+!config/.env.example
 
 # Documentation (build artifacts)
 docs/_build/
@@ -70,7 +71,6 @@ Thumbs.db
 tools/*.yaml
 tools/*.log
 
-# Development
-requirements-dev.txt
+# Development files
 .editorconfig
 Makefile

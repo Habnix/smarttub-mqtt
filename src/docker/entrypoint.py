@@ -10,12 +10,23 @@ Handles:
 - Proper logging initialization
 """
 
-import os
-import sys
-import signal
 import logging
+import os
+import signal
+import sys
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, TypedDict
+
+
+class Environment(TypedDict):
+    """Validated environment values used by the entrypoint."""
+
+    SMARTTUB_EMAIL: str
+    MQTT_BROKER_URL: str
+    SMARTTUB_PASSWORD: str | None
+    CONFIG_PATH: str | None
+    LOG_DIR: str
+
 
 # Setup basic logging for entrypoint
 logging.basicConfig(
@@ -29,10 +40,8 @@ logger = logging.getLogger("smarttub.core")
 class EntrypointError(Exception):
     """Fatal error during container initialization."""
 
-    pass
 
-
-def validate_environment() -> dict[str, str]:
+def validate_environment() -> Environment:
     """
     Validate required environment variables.
 
@@ -49,12 +58,13 @@ def validate_environment() -> dict[str, str]:
         "MQTT_BROKER_URL": os.getenv("MQTT_BROKER_URL"),
     }
 
-    # Check for password OR token
     password = os.getenv("SMARTTUB_PASSWORD")
-    token = os.getenv("SMARTTUB_TOKEN")
-
-    if not password and not token:
-        raise EntrypointError("Either SMARTTUB_PASSWORD or SMARTTUB_TOKEN must be set")
+    if os.getenv("SMARTTUB_TOKEN"):
+        raise EntrypointError(
+            "SMARTTUB_TOKEN is not supported; configure SMARTTUB_PASSWORD instead"
+        )
+    if not password:
+        raise EntrypointError("SMARTTUB_PASSWORD must be set")
 
     # Check required variables
     missing = [k for k, v in required_vars.items() if not v]
@@ -65,14 +75,10 @@ def validate_environment() -> dict[str, str]:
 
     # Validate paths
     config_path = os.getenv("CONFIG_PATH") or os.getenv("CONFIG_FILE")
-    log_dir = os.getenv(
-        "LOG_DIR", "/logs"
-    )  # Changed from /log to /logs to match docker-compose.yml
+    log_dir = os.getenv("LOG_DIR", "/logs")
 
     logger.info(f"  ✓ SMARTTUB_EMAIL: {required_vars['SMARTTUB_EMAIL']}")
-    logger.info(
-        f"  ✓ SMARTTUB_PASSWORD/TOKEN: {'***' if password or token else 'NOT SET'}"
-    )
+    logger.info(f"  ✓ SMARTTUB_PASSWORD: {'***' if password else 'NOT SET'}")
     logger.info(f"  ✓ MQTT_BROKER_URL: {required_vars['MQTT_BROKER_URL']}")
     if config_path:
         logger.info(f"  ✓ CONFIG_PATH: {config_path}")
@@ -80,16 +86,21 @@ def validate_environment() -> dict[str, str]:
         logger.info("  ℹ No YAML config - using .env only")
     logger.info(f"  ✓ LOG_DIR: {log_dir}")
 
+    email = required_vars["SMARTTUB_EMAIL"]
+    broker_url = required_vars["MQTT_BROKER_URL"]
+    if email is None or broker_url is None:
+        raise EntrypointError("Required environment variables are missing")
+
     return {
-        **required_vars,
+        "SMARTTUB_EMAIL": email,
+        "MQTT_BROKER_URL": broker_url,
         "SMARTTUB_PASSWORD": password,
-        "SMARTTUB_TOKEN": token,
         "CONFIG_PATH": config_path,
         "LOG_DIR": log_dir,
     }
 
 
-def validate_directories(env: dict[str, str]) -> None:
+def validate_directories(env: Environment) -> None:
     """
     Validate and create required directories.
 
@@ -110,7 +121,7 @@ def validate_directories(env: dict[str, str]) -> None:
         test_file.touch()
         test_file.unlink()
         logger.info(f"  ✓ Log directory writable: {log_dir}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise EntrypointError(f"Cannot write to log directory {log_dir}: {e}")
 
     # Check config directory
@@ -121,7 +132,7 @@ def validate_directories(env: dict[str, str]) -> None:
         try:
             config_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"  ✓ Config directory exists: {config_dir}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             raise EntrypointError(f"Cannot create config directory {config_dir}: {e}")
 
         # Check if config file exists (create minimal if not found)
@@ -148,7 +159,7 @@ logging:
 """
                 config_path.write_text(minimal_config, encoding="utf-8")
                 logger.info(f"  ✓ Created minimal config file: {config_path}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(
                     f"  ⚠ Could not create config file: {e} (will try to continue)"
                 )
@@ -236,8 +247,8 @@ def main() -> NoReturn:
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         sys.exit(0)
-    except Exception as e:
-        logger.exception(f"Unexpected error during initialization: {e}")
+    except Exception:
+        logger.exception("Unexpected error during initialization")
         sys.exit(1)
 
 

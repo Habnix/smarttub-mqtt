@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from threading import Lock
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,14 @@ class ComponentProgress:
 
     component_type: ComponentType
     component_id: str
-    name: Optional[str] = None
+    name: str | None = None
     phase: DiscoveryPhase = DiscoveryPhase.INITIALIZING
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
-    example_info: Optional[Dict[str, Any]] = None
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
+    error: str | None = None
+    example_info: dict[str, Any] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
             "component_type": self.component_type.value,
@@ -76,14 +76,14 @@ class SpaProgress:
     """Progress for a single spa discovery"""
 
     spa_id: str
-    spa_name: Optional[str] = None
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    spa_name: str | None = None
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
     total_components: int = 0
     completed_components: int = 0
-    current_component: Optional[ComponentProgress] = None
-    components: List[ComponentProgress] = field(default_factory=list)
-    error: Optional[str] = None
+    current_component: ComponentProgress | None = None
+    components: list[ComponentProgress] = field(default_factory=list)
+    error: str | None = None
 
     @property
     def progress_percent(self) -> int:
@@ -92,7 +92,7 @@ class SpaProgress:
             return 0
         return int((self.completed_components / self.total_components) * 100)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
             "spa_id": self.spa_id,
@@ -117,10 +117,10 @@ class DiscoveryProgressTracker:
 
     def __init__(self):
         self._lock = Lock()
-        self._spas: Dict[str, SpaProgress] = {}
+        self._spas: dict[str, SpaProgress] = {}
         self._overall_phase: DiscoveryPhase = DiscoveryPhase.INITIALIZING
-        self._started_at: Optional[datetime] = None
-        self._completed_at: Optional[datetime] = None
+        self._started_at: datetime | None = None
+        self._completed_at: datetime | None = None
         self._total_spas: int = 0
         self._completed_spas: int = 0
 
@@ -129,13 +129,13 @@ class DiscoveryProgressTracker:
         with self._lock:
             self._spas.clear()
             self._overall_phase = DiscoveryPhase.INITIALIZING
-            self._started_at = datetime.now(timezone.utc)
+            self._started_at = datetime.now(UTC)
             self._completed_at = None
             self._total_spas = total_spas
             self._completed_spas = 0
             logger.info(f"Discovery started for {total_spas} spa(s)")
 
-    def start_spa(self, spa_id: str, spa_name: Optional[str] = None) -> None:
+    def start_spa(self, spa_id: str, spa_name: str | None = None) -> None:
         """Start probing a spa"""
         with self._lock:
             self._spas[spa_id] = SpaProgress(spa_id=spa_id, spa_name=spa_name)
@@ -152,7 +152,7 @@ class DiscoveryProgressTracker:
         spa_id: str,
         component_type: ComponentType,
         component_id: str,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> None:
         """Start probing a component"""
         with self._lock:
@@ -172,7 +172,7 @@ class DiscoveryProgressTracker:
         spa_id: str,
         component_id: str,
         phase: DiscoveryPhase,
-        example_info: Optional[Dict[str, Any]] = None,
+        example_info: dict[str, Any] | None = None,
     ) -> None:
         """Update component phase and optionally add example info"""
         with self._lock:
@@ -191,8 +191,8 @@ class DiscoveryProgressTracker:
         self,
         spa_id: str,
         component_id: str,
-        example_info: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        example_info: dict[str, Any] | None = None,
+        error: str | None = None,
     ) -> None:
         """Mark a component as completed"""
         with self._lock:
@@ -202,7 +202,7 @@ class DiscoveryProgressTracker:
             spa = self._spas[spa_id]
             for component in spa.components:
                 if component.component_id == component_id:
-                    component.completed_at = datetime.now(timezone.utc)
+                    component.completed_at = datetime.now(UTC)
                     component.phase = (
                         DiscoveryPhase.FAILED if error else DiscoveryPhase.COMPLETED
                     )
@@ -220,14 +220,14 @@ class DiscoveryProgressTracker:
             ):
                 spa.current_component = None
 
-    def complete_spa(self, spa_id: str, error: Optional[str] = None) -> None:
+    def complete_spa(self, spa_id: str, error: str | None = None) -> None:
         """Mark a spa as completed"""
         with self._lock:
             if spa_id not in self._spas:
                 return
 
             spa = self._spas[spa_id]
-            spa.completed_at = datetime.now(timezone.utc)
+            spa.completed_at = datetime.now(UTC)
             if error:
                 spa.error = error
             self._completed_spas += 1
@@ -238,10 +238,10 @@ class DiscoveryProgressTracker:
         with self._lock:
             self._overall_phase = phase
             if phase == DiscoveryPhase.COMPLETED or phase == DiscoveryPhase.FAILED:
-                self._completed_at = datetime.now(timezone.utc)
+                self._completed_at = datetime.now(UTC)
                 logger.info(f"Discovery {phase.value}")
 
-    def get_progress(self) -> Dict[str, Any]:
+    def get_progress(self) -> dict[str, Any]:
         """Get current progress snapshot"""
         with self._lock:
             overall_percent = 0
@@ -262,7 +262,7 @@ class DiscoveryProgressTracker:
                 "spas": {spa_id: spa.to_dict() for spa_id, spa in self._spas.items()},
             }
 
-    def get_spa_progress(self, spa_id: str) -> Optional[Dict[str, Any]]:
+    def get_spa_progress(self, spa_id: str) -> dict[str, Any] | None:
         """Get progress for a specific spa"""
         with self._lock:
             spa = self._spas.get(spa_id)

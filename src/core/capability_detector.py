@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import yaml
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 from src.core.config_loader import AppConfig
+from src.core.discovery_repository import DiscoveryRepository
+from src.core.light_mode_catalog import available_light_mode_names
+from src.core.pump_model import (
+    normalize_pump_role,
+    normalize_speed_capability,
+    supported_speeds,
+)
 from src.core.smarttub_client import SmartTubClient
 from src.mqtt.topic_mapper import MQTTTopicMapper
 
@@ -19,25 +24,30 @@ class SpaCapabilities:
 
     def __init__(self, spa_id: str):
         self.spa_id = spa_id
-        self.discovered_at = datetime.now(timezone.utc)
-        self.last_updated = datetime.now(timezone.utc)
-        self.firmware_version: Optional[str] = None
-        self.model: Optional[str] = None
-        self.brand: Optional[str] = None
+        self.discovered_at = datetime.now(UTC)
+        self.last_updated = datetime.now(UTC)
+        self.firmware_version: str | None = None
+        self.model: str | None = None
+        self.brand: str | None = None
+        self.detection_status = "unknown"
 
         # Component capabilities
         self.heater_supported = False
-        self.heater_temperature_range: Optional[Dict[str, float]] = None
-        self.heater_modes: List[str] = []
+        self.heater_temperature_range: dict[str, float] | None = None
+        self.heater_modes: list[str] = []
 
         self.pump_supported = False
         self.pump_count = 0
-        self.pump_speeds: List[str] = []
+        self.pump_speeds: list[str] = []
+        self.pumps: list[dict[str, Any]] = []
 
         self.light_supported = False
-        self.light_colors: List[str] = []
-        self.light_modes: List[str] = []  # Available light modes
+        self.light_colors: list[str] = []
+        self.light_modes: list[str] = []  # Available light modes
         self.light_brightness_supported = False
+
+        self.primary_filtration_supported = False
+        self.primary_filtration_modes: list[str] = []
 
         # Advanced features
         self.uv_supported = False
@@ -51,7 +61,7 @@ class SpaCapabilities:
         self.orp_monitoring = False
         self.turbidity_monitoring = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert capabilities to dictionary for serialization."""
         return {
             "spa_id": self.spa_id,
@@ -60,6 +70,7 @@ class SpaCapabilities:
             "firmware_version": self.firmware_version,
             "model": self.model,
             "brand": self.brand,
+            "status": self.detection_status,
             "components": {
                 "heater": {
                     "supported": self.heater_supported,
@@ -70,12 +81,17 @@ class SpaCapabilities:
                     "supported": self.pump_supported,
                     "count": self.pump_count,
                     "speeds": self.pump_speeds,
+                    "items": self.pumps,
                 },
                 "light": {
                     "supported": self.light_supported,
                     "colors": self.light_colors,
                     "modes": self.light_modes,
                     "brightness_supported": self.light_brightness_supported,
+                },
+                "filtration": {
+                    "supported": self.primary_filtration_supported,
+                    "modes": self.primary_filtration_modes,
                 },
             },
             "advanced_features": {
@@ -93,7 +109,7 @@ class SpaCapabilities:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> SpaCapabilities:
+    def from_dict(cls, data: dict[str, Any]) -> SpaCapabilities:
         """Create capabilities from dictionary."""
         spa_id = data["spa_id"]
         caps = cls(spa_id)
@@ -103,6 +119,7 @@ class SpaCapabilities:
         caps.firmware_version = data.get("firmware_version")
         caps.model = data.get("model")
         caps.brand = data.get("brand")
+        caps.detection_status = data.get("status", "unknown")
 
         components = data.get("components", {})
         heater = components.get("heater", {})
@@ -114,12 +131,17 @@ class SpaCapabilities:
         caps.pump_supported = pump.get("supported", False)
         caps.pump_count = pump.get("count", 0)
         caps.pump_speeds = pump.get("speeds", [])
+        caps.pumps = pump.get("items", [])
 
         light = components.get("light", {})
         caps.light_supported = light.get("supported", False)
         caps.light_colors = light.get("colors", [])
         caps.light_modes = light.get("modes", [])
         caps.light_brightness_supported = light.get("brightness_supported", False)
+
+        filtration = components.get("filtration", {})
+        caps.primary_filtration_supported = filtration.get("supported", False)
+        caps.primary_filtration_modes = filtration.get("modes", [])
 
         advanced = data.get("advanced_features", {})
         caps.uv_supported = advanced.get("uv", False)
@@ -143,12 +165,14 @@ class CapabilityDetector:
         self,
         config: AppConfig,
         smarttub_client: SmartTubClient,
-        topic_mapper: Optional[MQTTTopicMapper] = None,
+        topic_mapper: MQTTTopicMapper | None = None,
+        discovery_repository: DiscoveryRepository | None = None,
     ):
         self.config = config
         self.smarttub_client = smarttub_client
         self.topic_mapper = topic_mapper
-        self._capabilities_cache: Dict[str, SpaCapabilities] = {}
+        self.discovery_repository = discovery_repository or DiscoveryRepository()
+        self._capabilities_cache: dict[str, SpaCapabilities] = {}
         self._cache_expiry_seconds = config.capability.cache_expiry_seconds
         self._refresh_interval_seconds = config.capability.refresh_interval_seconds
 
@@ -194,6 +218,9 @@ class CapabilityDetector:
             # Detect heater capabilities
             await self._detect_heater_capabilities(capabilities, status)
 
+            # Detect primary filtration capabilities, including ECO_MODE
+            await self._detect_filtration_capabilities(capabilities, status)
+
             # Detect pump capabilities
             await self._detect_pump_capabilities(capabilities, spa_data)
 
@@ -210,7 +237,8 @@ class CapabilityDetector:
             await self._detect_water_care_capabilities(capabilities, status)
 
             # Update timestamps
-            capabilities.last_updated = datetime.now(timezone.utc)
+            capabilities.last_updated = datetime.now(UTC)
+            capabilities.detection_status = "detected"
 
             # Cache the results
             self._capabilities_cache[spa_id] = capabilities
@@ -235,7 +263,7 @@ class CapabilityDetector:
             logger.info(f"Successfully detected capabilities for spa {spa_id}")
             return capabilities
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to detect capabilities for spa {spa_id}: {e}")
             # Return minimal capabilities on error
             minimal_caps = self._get_minimal_capabilities(spa_id)
@@ -256,24 +284,29 @@ class CapabilityDetector:
             if heater_present:
                 capabilities.heater_supported = True
 
-                # Try to detect temperature range (this might be model-specific)
-                # For now, use standard ranges based on model
-                if capabilities.model:
-                    if "low" in capabilities.model.lower():
+                # Keep the public project model-neutral: only expose limits
+                # explicitly observed in the upstream status. A model name is
+                # not a reliable contract for firmware-specific set points.
+                temperature_range = getattr(status, "temperature_range", None)
+                if isinstance(temperature_range, Mapping):
+                    minimum = temperature_range.get("min")
+                    maximum = temperature_range.get("max")
+                    if (
+                        isinstance(minimum, (int, float))
+                        and not isinstance(minimum, bool)
+                        and isinstance(maximum, (int, float))
+                        and not isinstance(maximum, bool)
+                        and minimum < maximum
+                    ):
                         capabilities.heater_temperature_range = {
-                            "min": 20.0,
-                            "max": 35.0,
-                        }
-                    else:
-                        capabilities.heater_temperature_range = {
-                            "min": 20.0,
-                            "max": 40.0,
+                            "min": float(minimum),
+                            "max": float(maximum),
                         }
 
                 # Detect available heat modes
                 capabilities.heater_modes = ["AUTO", "ECONOMY", "DAY", "READY", "REST"]
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not detect heater capabilities: {e}")
 
     async def _detect_pump_capabilities(
@@ -288,11 +321,50 @@ class CapabilityDetector:
                 capabilities.pump_supported = True
                 capabilities.pump_count = len(pumps)
 
-                # Detect pump speeds (simplified)
-                capabilities.pump_speeds = ["off", "low", "high"]
+                observed_speeds: set[str] = set()
+                capabilities.pumps = []
+                for pump in pumps:
+                    speed_capability = normalize_speed_capability(
+                        getattr(pump, "speed", None)
+                    )
+                    speeds = supported_speeds(speed_capability)
+                    observed_speeds.update(speeds)
+                    capabilities.pumps.append(
+                        {
+                            "id": str(getattr(pump, "id", "unknown")),
+                            "type": normalize_pump_role(getattr(pump, "type", None)),
+                            "speed_capability": speed_capability,
+                            "supported_speeds": speeds,
+                        }
+                    )
+                capabilities.pump_speeds = sorted(observed_speeds)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not detect pump capabilities: {e}")
+
+    async def _detect_filtration_capabilities(
+        self, capabilities: SpaCapabilities, status: Any
+    ) -> None:
+        """Detect primary filtration modes exposed by python-smarttub."""
+        try:
+            filtration = getattr(status, "primary_filtration", None)
+            if filtration is None:
+                return
+
+            capabilities.primary_filtration_supported = True
+            enum_type = getattr(type(filtration), "PrimaryFiltrationMode", None)
+            if enum_type is not None:
+                capabilities.primary_filtration_modes = [
+                    getattr(mode, "name", str(mode)) for mode in enum_type
+                ]
+            else:
+                capabilities.primary_filtration_modes = [
+                    "NORMAL",
+                    "NANO_MODE",
+                    "ECO_MODE",
+                ]
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Could not detect primary filtration capabilities: {e}")
 
     async def _detect_light_capabilities(
         self, capabilities: SpaCapabilities, spa_data: Any
@@ -308,41 +380,16 @@ class CapabilityDetector:
                 # Basic color support
                 capabilities.light_colors = ["white", "blue", "green", "red", "purple"]
 
-                # Get all available light modes from python-smarttub
                 try:
-                    import smarttub
-
-                    capabilities.light_modes = [
-                        mode.name for mode in smarttub.SpaLight.LightMode
-                    ]
-                except Exception as e:
+                    capabilities.light_modes = list(available_light_mode_names())
+                except Exception as e:  # noqa: BLE001
                     logger.debug(f"Could not get light modes from python-smarttub: {e}")
-                    # Fallback to known modes
-                    capabilities.light_modes = [
-                        "PURPLE",
-                        "ORANGE",
-                        "RED",
-                        "YELLOW",
-                        "GREEN",
-                        "AQUA",
-                        "BLUE",
-                        "WHITE",
-                        "AMBER",
-                        "HIGH_SPEED_COLOR_WHEEL",
-                        "HIGH_SPEED_WHEEL",
-                        "LOW_SPEED_WHEEL",
-                        "FULL_DYNAMIC_RGB",
-                        "AUTO_TIMER_EXTERIOR",
-                        "PARTY",
-                        "COLOR_WHEEL",
-                        "OFF",
-                        "ON",
-                    ]
+                    capabilities.light_modes = []
 
                 # Assume brightness control is available
                 capabilities.light_brightness_supported = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not detect light capabilities: {e}")
 
     async def _detect_advanced_features(
@@ -366,7 +413,7 @@ class CapabilityDetector:
             if capabilities.model and "chromazon" in capabilities.model.lower():
                 capabilities.chromazon_supported = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not detect advanced features: {e}")
 
     async def _detect_water_care_capabilities(
@@ -397,7 +444,7 @@ class CapabilityDetector:
                 capabilities.orp_monitoring = False
                 capabilities.turbidity_monitoring = False
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not detect water care capabilities: {e}")
             capabilities.water_care_supported = False
             capabilities.ph_monitoring = False
@@ -413,26 +460,10 @@ class CapabilityDetector:
         and uses them instead of the default list of all possible modes.
         """
         try:
-            # Try multiple paths where the YAML might be
-            yaml_paths = [
-                Path("/config/discovered_items.yaml"),
-                Path("config/discovered_items.yaml"),
-                Path("discovered_items.yaml"),
-            ]
-
-            yaml_path = None
-            for path in yaml_paths:
-                if path.exists():
-                    yaml_path = path
-                    break
-
-            if not yaml_path:
+            data = await self.discovery_repository.read_async()
+            if not data:
                 logger.debug("discovered_items.yaml not found, using default modes")
                 return
-
-            # Load YAML file
-            with open(yaml_path, "r") as f:
-                data = yaml.safe_load(f)
 
             if not data or "discovered_items" not in data:
                 return
@@ -451,38 +482,49 @@ class CapabilityDetector:
             detected_modes = set()
             for light in lights:
                 modes = light.get("detected_modes", [])
-                detected_modes.update(modes)
+                for mode in modes:
+                    # YAML 1.1 loaders may decode unquoted OFF/ON as booleans.
+                    # Preserve their domain meaning instead of dropping the
+                    # complete catalogue during mixed-type sorting.
+                    if mode is False:
+                        detected_modes.add("OFF")
+                    elif mode is True:
+                        detected_modes.add("ON")
+                    elif isinstance(mode, str) and mode.strip():
+                        detected_modes.add(mode.strip().upper())
 
             # If we found detected modes, use them instead of the default list
             if detected_modes:
-                capabilities.light_modes = sorted(list(detected_modes))
+                capabilities.light_modes = sorted(detected_modes)
                 logger.info(
                     f"Loaded {len(detected_modes)} detected light modes from YAML for spa {spa_id}"
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"Could not load detected_modes from YAML: {e}")
 
     def _is_cache_expired(self, capabilities: SpaCapabilities) -> bool:
         """Check if cached capabilities have expired."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         age_seconds = (now - capabilities.last_updated).total_seconds()
         return age_seconds > self._cache_expiry_seconds
 
     def _get_minimal_capabilities(self, spa_id: str) -> SpaCapabilities:
-        """Get minimal capabilities when detection fails."""
-        caps = SpaCapabilities(spa_id)
-        # Assume basic features are supported as fallback
-        caps.heater_supported = True
-        caps.pump_supported = True
-        caps.light_supported = True
-        return caps
+        """Return unknown capabilities without inventing component support."""
+        return SpaCapabilities(spa_id)
 
-    def get_cached_capabilities(self, spa_id: str) -> Optional[SpaCapabilities]:
+    def get_cached_capabilities(self, spa_id: str) -> SpaCapabilities | None:
         """Get cached capabilities for a spa."""
         return self._capabilities_cache.get(spa_id)
 
-    def clear_cache(self, spa_id: Optional[str] = None) -> None:
+    def get_cached_profiles(self) -> dict[str, dict[str, Any]]:
+        """Return capability profiles without exposing the mutable cache."""
+        return {
+            spa_id: self.get_capability_profile(spa_id)
+            for spa_id in self._capabilities_cache
+        }
+
+    def clear_cache(self, spa_id: str | None = None) -> None:
         """Clear capability cache.
 
         Args:
@@ -498,24 +540,10 @@ class CapabilityDetector:
         for spa_id in list(self._capabilities_cache.keys()):
             try:
                 await self.detect_capabilities(spa_id, force_refresh=True)
-
-                # Publish capability meta to MQTT if topic_mapper is available
-                if self.topic_mapper:
-                    capability_profile = self.get_capability_profile(spa_id)
-                    messages = self.topic_mapper.publish_capability_meta_entries(
-                        spa_id, capability_profile
-                    )
-                    legacy = self.topic_mapper.publish_capability_meta(
-                        spa_id, capability_profile
-                    )
-                    messages.append(legacy)
-                    self.topic_mapper.publish_messages(messages)
-                    logger.debug(f"Published capability meta entries for spa {spa_id}")
-
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to refresh capabilities for spa {spa_id}: {e}")
 
-    def get_capability_profile(self, spa_id: str) -> Dict[str, Any]:
+    def get_capability_profile(self, spa_id: str) -> dict[str, Any]:
         """Get a simplified capability profile for UI/API consumption."""
         capabilities = self.get_cached_capabilities(spa_id)
         if not capabilities:
@@ -523,13 +551,14 @@ class CapabilityDetector:
 
         return {
             "spa_id": spa_id,
-            "status": "detected",
+            "status": capabilities.detection_status,
             "model": capabilities.model,
             "brand": capabilities.brand,
             "supported_features": {
                 "heater": capabilities.heater_supported,
                 "pump": capabilities.pump_supported,
                 "light": capabilities.light_supported,
+                "filtration": capabilities.primary_filtration_supported,
                 "water_care": capabilities.water_care_supported,
                 "advanced": any(
                     [
@@ -540,12 +569,24 @@ class CapabilityDetector:
                     ]
                 ),
             },
+            "heater": {
+                "temperature_range": capabilities.heater_temperature_range,
+                "modes": capabilities.heater_modes,
+            }
+            if capabilities.heater_supported
+            else None,
             "lights": {
                 "modes": capabilities.light_modes,
                 "colors": capabilities.light_colors,
                 "brightness_supported": capabilities.light_brightness_supported,
             }
             if capabilities.light_supported
+            else None,
+            "pumps": capabilities.pumps if capabilities.pump_supported else None,
+            "filtration": {
+                "modes": capabilities.primary_filtration_modes,
+            }
+            if capabilities.primary_filtration_supported
             else None,
             "last_updated": capabilities.last_updated.isoformat(),
         }

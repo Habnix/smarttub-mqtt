@@ -4,28 +4,66 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from collections.abc import MutableMapping
+from typing import Any, cast
 
 import structlog
 
 from src.core.config_loader import AppConfig
 from src.core.log_rotation import setup_file_logging
+from src.core.log_safety import payload_summary, redact_event_dict, redact_text
+
+
+def _json_formatter() -> structlog.stdlib.ProcessorFormatter:
+    """Build the single safe JSON formatter used by console and file logs.
+
+    ``foreign_pre_chain`` covers ordinary ``logging`` records, including those
+    emitted by dependencies.  Structlog events run the same safety processor in
+    ``configure_log_bridge`` before they reach this formatter.
+    """
+    return structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=[
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.ExtraAdder(),
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.format_exc_info,
+            redact_event_dict,
+        ],
+        processor=structlog.processors.JSONRenderer(),
+    )
 
 
 class _MQTTForwarder:
-    def __init__(self, enabled: bool, mqtt_client: Any, topic: str) -> None:
+    def __init__(
+        self, enabled: bool, minimum_level: str, mqtt_client: Any, topic: str
+    ) -> None:
         self._enabled = enabled
+        self._minimum_level = _resolve_log_level(minimum_level)
         self._mqtt_client = mqtt_client
         self._topic = topic
 
-    def __call__(self, _: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
-        if self._enabled and self._mqtt_client is not None:
+    def __call__(
+        self, _: Any, method_name: str, event_dict: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        event_dict = redact_event_dict(None, method_name, event_dict)
+        event_level = _resolve_log_level(str(event_dict.get("level", method_name)))
+        if (
+            self._enabled
+            and event_level >= self._minimum_level
+            and self._mqtt_client is not None
+        ):
             try:
                 payload = json.dumps(event_dict, default=str)
-                self._mqtt_client.publish(self._topic, payload, 0, False)
-            except Exception:  # pragma: no cover - forwarding should not break logging
+                self._mqtt_client.publish_sync(self._topic, payload, 0, False)
+            except Exception:  # pragma: no cover - forwarding should not break logging  # noqa: BLE001, S110
                 pass
         return event_dict
+
+
+def _timestamp() -> str:
+    """Return a structlog-compatible ISO timestamp."""
+    event = structlog.processors.TimeStamper(fmt="iso", utc=True)(None, "", {})
+    return cast(str, event["timestamp"])
 
 
 class CommandAuditLogger:
@@ -57,16 +95,17 @@ class CommandAuditLogger:
             "event": "command_attempt",
             "command_id": command_id,
             "command_type": command_type,
-            "command_params": command_params,
+            "command_params": payload_summary(command_params),
             "user_id": user_id,
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
-                None, None, {}
-            )["timestamp"],
+            "timestamp": _timestamp(),
         }
         self._log_audit_event(event)
 
     def log_command_success(
-        self, command_id: str, command_type: str, result: dict[str, Any] = None
+        self,
+        command_id: str,
+        command_type: str,
+        result: dict[str, Any] | None = None,
     ) -> None:
         """Log a successful command execution.
 
@@ -79,10 +118,8 @@ class CommandAuditLogger:
             "event": "command_success",
             "command_id": command_id,
             "command_type": command_type,
-            "result": result or {},
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
-                None, None, {}
-            )["timestamp"],
+            "result": payload_summary(result or {}),
+            "timestamp": _timestamp(),
         }
         self._log_audit_event(event)
 
@@ -91,7 +128,7 @@ class CommandAuditLogger:
         command_id: str,
         command_type: str,
         error: str,
-        error_details: dict[str, Any] = None,
+        error_details: dict[str, Any] | None = None,
     ) -> None:
         """Log a failed command execution.
 
@@ -105,11 +142,9 @@ class CommandAuditLogger:
             "event": "command_failure",
             "command_id": command_id,
             "command_type": command_type,
-            "error": error,
-            "error_details": error_details or {},
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
-                None, None, {}
-            )["timestamp"],
+            "error": redact_text(error),
+            "error_details": payload_summary(error_details or {}),
+            "timestamp": _timestamp(),
         }
         self._log_audit_event(event)
 
@@ -128,9 +163,7 @@ class CommandAuditLogger:
             "command_id": command_id,
             "command_type": command_type,
             "timeout_seconds": timeout_seconds,
-            "timestamp": structlog.processors.TimeStamper(fmt="iso", utc=True)(
-                None, None, {}
-            )["timestamp"],
+            "timestamp": _timestamp(),
         }
         self._log_audit_event(event)
 
@@ -142,17 +175,25 @@ class CommandAuditLogger:
         """
         # Log to structured logging
         logger = structlog.get_logger("command_audit")
-        logger.info("Command audit event", **event)
+        event_name = str(event.get("event", "command_audit"))
+        logger.info(
+            event_name, **{key: value for key, value in event.items() if key != "event"}
+        )
 
         # Forward to MQTT if enabled
         if self._enabled and self.mqtt_client is not None:
             try:
                 payload = json.dumps(event, default=str)
-                self.mqtt_client.publish(self.audit_topic, payload, qos=1, retain=False)
+                self.mqtt_client.publish_sync(
+                    self.audit_topic, payload, qos=1, retain=False
+                )
             except (
-                Exception
+                Exception  # noqa: BLE001
             ) as e:  # pragma: no cover - forwarding should not break operations
-                logger.warning("Failed to forward command audit to MQTT", error=str(e))
+                logger.warning(
+                    "Failed to forward command audit to MQTT",
+                    error=redact_text(e),
+                )
 
 
 def _resolve_log_level(level: str | None) -> int:
@@ -164,7 +205,10 @@ def _resolve_log_level(level: str | None) -> int:
 def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     base_topic = (config.mqtt.base_topic or "smarttub-mqtt").rstrip("/")
     forwarder = _MQTTForwarder(
-        config.logging.mqtt_forwarding, mqtt_client, f"{base_topic}/meta/logs"
+        config.logging.mqtt_log_enabled,
+        config.logging.mqtt_log_level,
+        mqtt_client,
+        f"{base_topic}/meta/logs",
     )
 
     min_level = _resolve_log_level(config.logging.level)
@@ -190,6 +234,8 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
             structlog.stdlib.filter_by_level,
             structlog.processors.add_log_level,
             timestamper,
+            structlog.processors.format_exc_info,
+            redact_event_dict,
             forwarder,
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
@@ -206,11 +252,15 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     # Add console handler to root (all logs to console)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(min_level)
-    console_formatter = structlog.stdlib.ProcessorFormatter(
-        processor=structlog.processors.JSONRenderer(),
-    )
+    console_formatter = _json_formatter()
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
+
+    # File handlers are created by the rotation module before structlog is
+    # configured.  Use the very same formatter so no sink can bypass redaction
+    # or fall back to a human-only, non-machine-readable format.
+    for handler in file_handlers.values():
+        handler.setFormatter(_json_formatter())
 
     # Add default smarttub.log to root for catchall
     root_logger.addHandler(file_handlers["smarttub"])
@@ -265,4 +315,4 @@ def configure_log_bridge(config: AppConfig, mqtt_client: Any) -> None:
     uvicorn_error_logger.addHandler(console_handler)
 
 
-__all__ = ["configure_log_bridge", "CommandAuditLogger"]
+__all__ = ["CommandAuditLogger", "configure_log_bridge"]

@@ -6,14 +6,19 @@ on:
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   # ============================================================================
   # Linting & Code Quality
   # ============================================================================
   lint:
-    name: Lint & Type Check
+    name: Lint, Type Check & Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.13', '3.14']
     
     steps:
       - name: Checkout code
@@ -22,40 +27,51 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: ${{ matrix.python-version }}
       
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
-      
-      - name: Run Ruff linter
+          pip install -r requirements.lock
+          pip install -e .[dev] -c requirements.lock
+
+      - name: Run required local/CI quality gate
+        run: ./scripts/quality-check.sh
+
+      - name: Build immutable wheel
+        env:
+          WHEEL_DIR: ${{ runner.temp }}/smarttub-mqtt-wheel
         run: |
-          echo "::group::Ruff Check"
-          ruff check . --output-format=github --select F,E --ignore E501,E402
-          echo "::endgroup::"
+          mkdir -p "$WHEEL_DIR"
+          python -m pip wheel --no-deps --wheel-dir "$WHEEL_DIR" .
+          python -c "from pathlib import Path; import os, zipfile; wheel = next(Path(os.environ['WHEEL_DIR']).glob('smarttub_mqtt-*.whl')); names = zipfile.ZipFile(wheel).namelist(); assert 'src/web/templates/overview.html' in names; assert 'src/web/static/ui.js' in names; assert not any('__editable__' in name for name in names); print(wheel)"
       
-      - name: Run Ruff formatter check
+  browser-smoke:
+    name: Browser smoke test (Python 3.14)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dependencies
         run: |
-          echo "::group::Ruff Format"
-          ruff format --check .
-          echo "::endgroup::"
-        continue-on-error: true  # Format check is optional
-      
-      - name: Run MyPy type checker
-        run: |
-          echo "::group::MyPy"
-          mypy src/ --ignore-missing-imports --show-error-codes
-          echo "::endgroup::"
-        continue-on-error: true  # Type hints are optional initially
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install -e .[dev] -c requirements.lock
+
+      - name: Install browser for UI smoke tests
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run browser smoke test
+        run: pytest -q tests/test_web_browser_smoke.py
 
   # ============================================================================
-  # Unit & Integration Tests - DISABLED (tests removed in v0.3.3)
-  # ============================================================================
-  # Tests have been removed in production release v0.3.3
-  # Uncomment this section if you add tests/ directory back
-
   # ============================================================================
   # Docker Build Test
   # ============================================================================
@@ -69,6 +85,10 @@ jobs:
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Read canonical application version
+        id: version
+        run: echo "value=$(sed -n 's/^__version__ = \"\(.*\)\"$/\1/p' src/core/version.py)" >> "$GITHUB_OUTPUT"
       
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -77,15 +97,72 @@ jobs:
           push: false
           load: true
           tags: smarttub-mqtt:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
             BUILDKIT_INLINE_CACHE=1
       
       - name: Test Docker image
         run: |
           docker run --rm --entrypoint python smarttub-mqtt:test --version
-          docker run --rm --entrypoint python smarttub-mqtt:test -c "import src.core.config_loader; print('Import successful')"
+          docker run --rm \
+            -e SMARTTUB_EMAIL=user@example.com \
+            -e SMARTTUB_PASSWORD=password \
+            -e MQTT_BROKER_URL=mqtt://broker:1883 \
+            --entrypoint python \
+            smarttub-mqtt:test \
+            -c "from pathlib import Path; from src.core.config_loader import load_config; from src.docker.entrypoint import validate_directories, validate_environment; environment = validate_environment(); validate_directories(environment); assert environment['LOG_DIR'] == '/logs'; assert load_config().logging.log_dir == '/logs'; probe = Path('/config/.ci-write-test'); probe.touch(); probe.unlink(); print('Entrypoint and configuration validation successful')"
+          cp config/.env.example config/.env
+          docker compose config --quiet
+          SMARTTUB_PRIVATE_IMAGE=registry.example.com/test/smarttub-mqtt:edge \
+            docker compose -f docker-compose.yml -f docker-compose.gitea.yml config --quiet
+
+  # ============================================================================
+  # Publish an explicitly non-release development image to the private Gitea registry.
+  # ============================================================================
+  docker-publish:
+    name: Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, browser-smoke, docker, security]
+    if: github.server_url != 'https://github.com' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Read canonical application version
+        id: version
+        run: echo "value=$(sed -n 's/^__version__ = \"\(.*\)\"$/\1/p' src/core/version.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate private registry configuration
+        env:
+          REGISTRY_HOST: ${{ vars.GITEA_REGISTRY }}
+          IMAGE_NAME: ${{ vars.GITEA_IMAGE }}
+        run: |
+          test -n "$REGISTRY_HOST" || { echo "Set the GITEA_REGISTRY repository variable" >&2; exit 1; }
+          test -n "$IMAGE_NAME" || { echo "Set the GITEA_IMAGE repository variable" >&2; exit 1; }
+          case "$IMAGE_NAME" in
+            "$REGISTRY_HOST/"*) ;;
+            *) echo "GITEA_IMAGE must start with GITEA_REGISTRY/" >&2; exit 1 ;;
+          esac
+
+      - name: Log in to Gitea Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.GITEA_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ vars.GITEA_IMAGE }}:edge
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
 
   # ============================================================================
   # Security Scanning
@@ -101,35 +178,27 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: '3.13'
       
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
+          pip install -r requirements.lock
+          pip install -e .[dev] -c requirements.lock
       
-      - name: Run Safety check (dependencies)
-        run: |
-          echo "::group::Safety Check"
-          safety check --json || true
-          echo "::endgroup::"
-        continue-on-error: true
-      
-      - name: Run Bandit (code security)
-        run: |
-          echo "::group::Bandit"
-          bandit -r src/ -f json -o bandit-report.json || true
-          bandit -r src/ -f screen
-          echo "::endgroup::"
-        continue-on-error: true
+      - name: Run source, dependency and secret checks
+        run: ./scripts/security-check.sh
       
       - name: Upload security reports
         uses: actions/upload-artifact@v4
-        if: always()
+        # Gitea does not currently support the artifact service required by
+        # upload-artifact v4. Keep artifact upload enabled for GitHub CI.
+        if: ${{ always() && github.server_url == 'https://github.com' }}
         with:
           name: security-reports
-          path: bandit-report.json
+          path: |
+            bandit-report.json
+            pip-audit-report.json
 
   # ============================================================================
   # Build Summary
@@ -137,7 +206,7 @@ jobs:
   summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [lint, docker, security]
+    needs: [lint, browser-smoke, docker, security]
     if: always()
     
     steps:
@@ -146,11 +215,12 @@ jobs:
           echo "## CI Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Lint**: ${{ needs.lint.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Browser smoke**: ${{ needs.browser-smoke.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Docker**: ${{ needs.docker.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Security**: ${{ needs.security.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ "${{ needs.lint.result }}" != "success" ] || [ "${{ needs.docker.result }}" != "success" ]; then
+          if [ "${{ needs.lint.result }}" != "success" ] || [ "${{ needs.browser-smoke.result }}" != "success" ] || [ "${{ needs.docker.result }}" != "success" ] || [ "${{ needs.security.result }}" != "success" ]; then
             echo "❌ Build failed - check logs above" >> $GITHUB_STEP_SUMMARY
             exit 1
           else

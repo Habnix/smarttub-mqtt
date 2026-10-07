@@ -4,16 +4,19 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 0.4.x   | :white_check_mark: (from the 0.4.0 release) |
+| 0.3.x   | :white_check_mark: |
+| < 0.3   | :x:                |
 
 ## Reporting a Vulnerability
 
-**Please do NOT report security vulnerabilities through public GitHub issues.**
+**Please do NOT report security vulnerabilities through public issues.**
 
-Instead, please report them via:
-- Email: security@example.com (Update with actual contact)
-- Private Security Advisory: https://github.com/YOUR-ORG/smarttub-mqtt/security/advisories/new
+On GitHub, open **Security → Advisories → Report a vulnerability** if private
+vulnerability reporting is enabled. If that button is unavailable, open an
+issue asking the maintainer for a private reporting channel, without including
+vulnerability details. The private development Gitea instance is not a public
+support channel.
 
 ### What to Include
 
@@ -94,7 +97,7 @@ Instead, please report them via:
 
 ## Security Contacts
 
-For security-related questions: security@example.com
+Use the reporting process above for security-related questions.
 
 ## Acknowledgments
 
@@ -104,4 +107,4 @@ We thank the security researchers who help keep our users safe:
 
 ---
 
-Last Updated: 2025-10-30
+Last Updated: 2026-10-07

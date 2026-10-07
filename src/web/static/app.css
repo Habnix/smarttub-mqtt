@@ -1,0 +1,177 @@
+:root {
+    --st-primary: #075985;
+    --st-primary-dark: #0c4a6e;
+    --st-surface: #ffffff;
+    --st-background: #f0f9ff;
+    --st-text: #172033;
+    --st-muted: #526174;
+    --st-focus: #f59e0b;
+}
+
+body {
+    background: var(--st-background) !important;
+    color: var(--st-text);
+}
+
+.navbar.bg-primary {
+    background: linear-gradient(120deg, var(--st-primary-dark), var(--st-primary)) !important;
+}
+
+.navbar-brand { font-weight: 700; letter-spacing: .01em; }
+.smarttub-navigation { align-items: center; gap: .5rem; }
+.nav-status {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-left: .75rem;
+    margin-right: .25rem;
+    color: rgb(255 255 255 / 82%);
+    font-size: .8rem;
+    white-space: nowrap;
+}
+.state-stale .component-card { outline: 2px solid rgb(245 158 11 / 35%); }
+.nav-link:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--st-focus);
+    outline-offset: 2px;
+}
+
+.card {
+    border: 0;
+    border-radius: 1rem;
+    box-shadow: 0 8px 24px rgb(15 23 42 / 8%);
+}
+
+.component-card, .control-card {
+    transition: all .3s ease;
+}
+
+.component-card:hover, .control-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgb(15 23 42 / 12%);
+}
+
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.status-on, .status-completed { background-color: #28a745; }
+.status-off, .status-idle { background-color: #6c757d; }
+.status-error, .status-failed { background-color: #dc3545; }
+.status-unknown, .status-warning { background-color: #f59e0b; }
+.status-running { background-color: #0d6efd; animation: pulse 1.5s infinite; }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .5; }
+}
+
+.temperature-display {
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.w-0 { width: 0% !important; }
+.w-100 { width: 100% !important; }
+.btn-control { min-width: 120px; margin: 5px; }
+.status-badge { position: absolute; top: 10px; right: 10px; }
+
+.command-feedback {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 5px;
+    display: none;
+}
+
+.command-success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.command-error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.mode-card {
+    cursor: pointer;
+    transition: all .3s ease;
+    border: 2px solid transparent;
+}
+
+.mode-input:not(:disabled) + .mode-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgb(15 23 42 / 15%);
+}
+
+.mode-input:checked + .mode-card,
+.mode-card.selected {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+}
+
+.mode-input:focus-visible + .mode-card {
+    outline: 3px solid #212529;
+    outline-offset: 3px;
+}
+
+.mode-input:disabled + .mode-card {
+    cursor: not-allowed;
+    opacity: .6;
+}
+
+.mode-selection.has-error .mode-card {
+    border-color: #dc3545;
+}
+
+.mode-selection .invalid-feedback {
+    display: block;
+}
+
+.mode-selection .invalid-feedback.d-none {
+    display: none;
+}
+
+.results-table { max-height: 400px; overflow-y: auto; }
+
+.card-header { border-radius: 1rem 1rem 0 0 !important; }
+.btn { min-height: 44px; font-weight: 600; }
+.command-feedback { font-weight: 600; }
+.mode-list { max-height: 100px; overflow-y: auto; font-size: .75rem; }
+.technical-details summary { cursor: pointer; font-weight: 600; }
+.discovery-progress { height: 25px; }
+
+@media (min-width: 992px) {
+    .smarttub-navigation { display: flex; margin-left: auto; }
+}
+
+@media (max-width: 767px) {
+    .navbar-nav { padding-top: .5rem; }
+    .navbar-text { display: none; }
+    h1 { font-size: 1.75rem; }
+}
+
+@media (max-width: 991px) {
+    .smarttub-navigation {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: flex-start;
+        padding: .75rem 0;
+    }
+    .smarttub-navigation.is-open { display: flex; }
+    .smarttub-navigation .navbar-nav { width: 100%; }
+    .smarttub-navigation .nav-link { padding-left: 0; }
+    .nav-status {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: .25rem;
+        margin: .5rem 0;
+        white-space: normal;
+    }
+}

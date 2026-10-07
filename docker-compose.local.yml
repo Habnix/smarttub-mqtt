@@ -1,0 +1,7 @@
+services:
+  smarttub-mqtt:
+    build:
+      context: .
+      args:
+        APP_VERSION: "0.4.0"
+    image: smarttub-mqtt:local

@@ -1,36 +1,17 @@
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# system deps (minimal)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy project files
-COPY pyproject.toml requirements.txt requirements-dev.txt* /app/
-COPY src /app/src
-
-RUN pip install --no-cache-dir -r requirements.txt || true
-
-EXPOSE 8080
-
-ENV PYTHONUNBUFFERED=1
-
-CMD ["python", "-m", "src.cli.run"]
 # Multi-stage Dockerfile for SmartTub-MQTT
 # Build optimized container image with minimal attack surface
 
 # ============================================================================
 # Stage 1: Builder - Install dependencies and build wheels
 # ============================================================================
-FROM python:3.11-slim AS builder
+FROM python:3.13-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
         g++ \
+        git \
         make \
         libffi-dev \
         libssl-dev && \
@@ -40,25 +21,32 @@ RUN apt-get update && \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy dependency specifications
+# Copy the exact production dependency set before source code for cache reuse.
 WORKDIR /build
+COPY requirements.lock ./
 COPY pyproject.toml ./
 COPY README.md ./
+COPY src/ ./src/
 
-# Install dependencies (cached layer)
+# Install locked dependencies and the application as an immutable wheel.
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -e .
+    pip install --no-cache-dir -r requirements.lock && \
+    pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels . && \
+    pip install --no-cache-dir --no-deps /wheels/smarttub_mqtt-*.whl && \
+    test -z "$(find /opt/venv/lib/python3.13/site-packages -name '__editable__*' -print -quit)"
 
 # ============================================================================
 # Stage 2: Runtime - Minimal production image
 # ============================================================================
-FROM python:3.11-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 # Metadata
 LABEL maintainer="SmartTub MQTT Maintainers"
-LABEL org.opencontainers.image.source="https://github.com/smarttub-mqtt"
+LABEL org.opencontainers.image.source="https://github.com/Habnix/smarttub-mqtt"
 LABEL org.opencontainers.image.description="SmartTub MQTT Bridge with Web UI"
-LABEL org.opencontainers.image.version="0.3.3"
+# The CI workflows pass this from src/core/version.py (or the release tag).
+ARG APP_VERSION
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 # Security: Run as non-root user
 RUN groupadd -r smarttub && \
@@ -71,27 +59,24 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Set working directory
 WORKDIR /app
 
-# Copy application code
-COPY --chown=smarttub:smarttub src/ /app/src/
-
 # Create required directories with correct permissions
-RUN mkdir -p /config /log && \
-    chown -R smarttub:smarttub /config /log
+RUN mkdir -p /config /logs && \
+    chown -R smarttub:smarttub /config /logs
 
 # Volume mounts for persistent data
-VOLUME ["/config", "/log"]
+VOLUME ["/config", "/logs"]
 
 # Environment defaults
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    LOG_DIR=/log
+    LOG_DIR=/logs
 
 # Expose Web UI port (default: 8080)
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/live').read()" || exit 1
 
 # Switch to non-root user
 USER smarttub

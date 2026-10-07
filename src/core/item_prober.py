@@ -1,20 +1,29 @@
 from __future__ import annotations
 
-import json
-import logging
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import yaml
 import asyncio
+import logging
+from datetime import UTC, datetime
+from typing import Any
 
 from src.core.config_loader import AppConfig
-from src.mqtt.topic_mapper import MQTTMessage
+from src.core.discovery_output import (
+    DiscoveryFileRepository,
+    DiscoveryMqttPublisher,
+    DiscoveryPersistenceError,
+)
+from src.core.discovery_recovery import DiscoveryRecoveryJournal
+from src.core.discovery_serialization import make_serializable
+from src.core.light_discovery_engine import LightDiscoveryEngine
+from src.core.light_mode_catalog import (
+    LightModeTestStatus,
+    available_light_mode_names,
+    is_mode_detected,
+)
+from src.core.smarttub_gateway import SmartTubGateway
 
 # Import ErrorTracker if available (T058)
 try:
-    from src.core.error_tracker import ErrorTracker, ErrorCategory, ErrorSeverity
+    from src.core.error_tracker import ErrorCategory, ErrorSeverity, ErrorTracker
 
     HAS_ERROR_TRACKER = True
 except ImportError:
@@ -26,9 +35,9 @@ except ImportError:
 # Import DiscoveryProgressTracker if available (T059)
 try:
     from src.core.discovery_progress import (
-        DiscoveryProgressTracker,
-        DiscoveryPhase,
         ComponentType,
+        DiscoveryPhase,
+        DiscoveryProgressTracker,
     )
 
     HAS_PROGRESS_TRACKER = True
@@ -52,33 +61,11 @@ class ItemProber:
     - Publishes a JSON summary to MQTT under: {base_topic}/{spa_id}/discovery/result
     """
 
-    # All known light modes from python-smarttub
-    ALL_LIGHT_MODES = [
-        "OFF",
-        "PURPLE",
-        "ORANGE",
-        "RED",
-        "YELLOW",
-        "GREEN",
-        "AQUA",
-        "BLUE",
-        "WHITE",
-        "AMBER",
-        "HIGH_SPEED_COLOR_WHEEL",
-        "HIGH_SPEED_WHEEL",
-        "LOW_SPEED_WHEEL",
-        "FULL_DYNAMIC_RGB",
-        "AUTO_TIMER_EXTERIOR",
-        "PARTY",
-        "COLOR_WHEEL",
-        "ON",
-    ]
-
     # Brightness levels to test (0-100)
-    BRIGHTNESS_LEVELS = [0, 25, 50, 75, 100]
+    BRIGHTNESS_LEVELS = (0, 25, 50, 75, 100)
 
     # Delay between light mode tests (seconds)
-    LIGHT_TEST_DELAY_SECONDS = 1  # Reduced for faster testing
+    LIGHT_TEST_DELAY_SECONDS = 0.25
 
     def __init__(
         self,
@@ -88,928 +75,475 @@ class ItemProber:
         *,
         error_tracker: Any | None = None,
         progress_tracker: Any | None = None,
+        recovery_journal: DiscoveryRecoveryJournal | None = None,
+        file_repository: DiscoveryFileRepository | None = None,
+        mqtt_publisher: DiscoveryMqttPublisher | None = None,
     ):
         self.config = config
         self.smarttub_client = smarttub_client
         self.topic_mapper = topic_mapper
         self.error_tracker = error_tracker
         self.progress_tracker = progress_tracker
+        self.gateway = getattr(smarttub_client, "gateway", SmartTubGateway())
+        self.discovery_engine = LightDiscoveryEngine(
+            config,
+            gateway=self.gateway,
+            recovery_journal=recovery_journal,
+        )
+        self.file_repository = file_repository or DiscoveryFileRepository()
+        self.mqtt_publisher = mqtt_publisher or DiscoveryMqttPublisher(
+            config, topic_mapper
+        )
 
-    async def probe_all(self) -> Dict[str, Any]:
-        """Probe all known spas and persist+publish results.
+    async def probe_all(self) -> dict[str, Any]:
+        """Probe every known spa, then persist and publish the results."""
+        spas = list(self.smarttub_client.spas)
+        await self.discovery_engine.recover_pending(spas)
+        self._start_progress(len(spas))
 
-        Returns:
-            Dict mapping spa_id to discovery result
-        """
-        results: Dict[str, Any] = {}
-
-        spas = self.smarttub_client.spas
-
-        # Start discovery progress tracking (T059)
-        if self.progress_tracker and HAS_PROGRESS_TRACKER:
-            self.progress_tracker.start_discovery(total_spas=len(spas))
-            self.progress_tracker.set_overall_phase(DiscoveryPhase.FETCHING_SPAS)
-
+        results: dict[str, Any] = {}
         for spa in spas:
             spa_id = str(getattr(spa, "id", "unknown"))
-            spa_name = getattr(spa, "brand", "Unknown Spa")
+            results[spa_id] = await self._probe_spa_with_reporting(spa, spa_id)
 
-            # Start spa progress tracking (T059)
-            if self.progress_tracker and HAS_PROGRESS_TRACKER:
-                self.progress_tracker.start_spa(spa_id, spa_name)
-                self.progress_tracker.set_overall_phase(DiscoveryPhase.PROBING_SPA)
-
-            try:
-                res = await self._probe_spa(spa)
-                results[spa_id] = res
-
-                # Complete spa progress tracking (T059)
-                if self.progress_tracker and HAS_PROGRESS_TRACKER:
-                    self.progress_tracker.complete_spa(spa_id)
-
-            except Exception as e:
-                logger.error(f"Error probing spa {spa_id}: {e}")
-
-                # Track discovery error (T058)
-                if self.error_tracker and HAS_ERROR_TRACKER:
-                    self.error_tracker.track_error(
-                        category=ErrorCategory.DISCOVERY,
-                        message=f"Failed to probe spa {spa_id}: {str(e)}",
-                        severity=ErrorSeverity.ERROR,
-                        error_code="DISCOVERY_PROBE_FAILED",
-                        details={"spa_id": spa_id},
-                    )
-
-                # Complete spa with error (T059)
-                if self.progress_tracker and HAS_PROGRESS_TRACKER:
-                    self.progress_tracker.complete_spa(spa_id, error=str(e))
-
-                results[spa_id] = {
-                    "spa_id": spa_id,
-                    "discovered_at": datetime.now(timezone.utc).isoformat(),
-                    "error": str(e),
-                }
-
-        # Writing YAML phase (T059)
-        if self.progress_tracker and HAS_PROGRESS_TRACKER:
-            self.progress_tracker.set_overall_phase(DiscoveryPhase.WRITING_YAML)
-
-        # Persist results to YAML (sanitize objects first)
-        try:
-            safe_results = {k: self._make_serializable(v) for k, v in results.items()}
-            # Before writing YAML, publish per-pump retained meta topics so
-            # they are immediately discoverable via MQTT during --discover.
-            try:
-                messages = []
-                base_topic = self.config.mqtt.base_topic
-                for spa_id, payload in safe_results.items():
-                    pumps = payload.get("pumps", [])
-                    # Publish detailed per-pump simple subtopics (id/type/state/speed/last_updated)
-                    # by reusing the topic mapper: construct small state snapshots and
-                    # ask the mapper to create the proper messages.
-                    snapshot = {
-                        "timestamp": payload.get("discovered_at")
-                        or datetime.now(timezone.utc).isoformat(),
-                        "spa_id": spa_id,
-                        "components": {"pumps": []},
-                    }
-                    for p in pumps:
-                        pid = p.get("id") or "unknown"
-                        # attempt to extract state and speed from raw when available
-                        raw = (
-                            p.get("raw", {})
-                            if isinstance(p.get("raw", {}), dict)
-                            else {}
-                        )
-                        props = (
-                            raw.get("properties", {}) if isinstance(raw, dict) else {}
-                        )
-
-                        def _norm_scalar(v):
-                            # treat None, empty dict/list as missing
-                            if v is None:
-                                return None
-                            if isinstance(v, (dict, list)) and not v:
-                                return None
-                            return v
-
-                        state_val = (
-                            _norm_scalar(props.get("state"))
-                            or _norm_scalar(raw.get("state"))
-                            or _norm_scalar(p.get("state"))
-                            or "unknown"
-                        )
-                        speed_val = (
-                            _norm_scalar(props.get("speed"))
-                            or _norm_scalar(raw.get("speed"))
-                            or _norm_scalar(p.get("speed"))
-                            or None
-                        )
-                        type_val = (
-                            _norm_scalar(p.get("type"))
-                            or _norm_scalar(props.get("type"))
-                            or _norm_scalar(raw.get("type"))
-                            or None
-                        )
-                        snapshot["components"]["pumps"].append(
-                            {
-                                "id": pid,
-                                "type": type_val,
-                                "state": state_val,
-                                "speed": speed_val,
-                            }
-                        )
-
-                    # Use topic_mapper to generate messages for this synthetic snapshot
-                    try:
-                        mapper_messages = []
-                        if hasattr(self.topic_mapper, "publish_state_snapshot"):
-                            mapper_messages = self.topic_mapper.publish_state_snapshot(
-                                snapshot
-                            )
-                        else:
-                            # fallback: use global helper
-                            from src.mqtt.topic_mapper import (
-                                publish_state_snapshot as _helper,
-                            )
-
-                            mapper_messages = _helper(self.config, snapshot)
-
-                        # Publish via mapper if supported
-                        if mapper_messages:
-                            if hasattr(self.topic_mapper, "publish_messages"):
-                                self.topic_mapper.publish_messages(mapper_messages)
-                            else:
-                                mqtt_client = getattr(
-                                    self.topic_mapper, "mqtt_client", None
-                                )
-                                if mqtt_client is not None:
-                                    for m in mapper_messages:
-                                        mqtt_client.publish(
-                                            topic=m.topic,
-                                            payload=m.payload,
-                                            qos=m.qos,
-                                            retain=m.retain,
-                                        )
-
-                        # Also publish meta messages as before
-                        for p in pumps:
-                            pid = p.get("id") or "unknown"
-                            raw_p = (
-                                p.get("raw", {})
-                                if isinstance(p.get("raw", {}), dict)
-                                else {}
-                            )
-                            props_p = (
-                                raw_p.get("properties", {})
-                                if isinstance(raw_p, dict)
-                                else {}
-                            )
-                            # Prefer type from properties (where upstream API usually places it)
-                            meta_type = props_p.get("type") or p.get("type") or None
-                            meta = {
-                                "id": pid,
-                                "type": meta_type,
-                                "supports": p.get("supports", {}),
-                                # T052: Use _writetopic convention instead of set_
-                                "state_writetopic": f"{base_topic}/{spa_id}/pumps/{pid}/state_writetopic",
-                                "discovered_at": payload.get("discovered_at"),
-                            }
-                            topic = f"{base_topic}/{spa_id}/pumps/{pid}/meta"
-                            messages.append(
-                                MQTTMessage(
-                                    topic=topic,
-                                    payload=json.dumps(meta),
-                                    qos=1,
-                                    retain=True,
-                                )
-                            )
-                            try:
-                                logger.info(
-                                    "created-pump-meta-discovery",
-                                    extra={
-                                        "topic": topic,
-                                        "spa_id": spa_id,
-                                        "pump_id": pid,
-                                    },
-                                )
-                            except Exception:
-                                pass
-                    except Exception as e:
-                        logger.debug(
-                            f"Failed to generate/publish per-pump subtopics for spa {spa_id}: {e}"
-                        )
-
-                # publish accumulated meta messages
-                if messages and hasattr(self.topic_mapper, "publish_messages"):
-                    self.topic_mapper.publish_messages(messages)
-                elif messages:
-                    mqtt_client = getattr(self.topic_mapper, "mqtt_client", None)
-                    if mqtt_client is not None:
-                        for m in messages:
-                            mqtt_client.publish(
-                                topic=m.topic,
-                                payload=m.payload,
-                                qos=m.qos,
-                                retain=m.retain,
-                            )
-            except Exception as e:
-                logger.debug(f"Failed to publish per-pump meta during discovery: {e}")
-
-            self._write_yaml(safe_results)
-        except Exception as e:
-            logger.error(f"Failed to write discovered items YAML: {e}")
-
-        # Publish each spa's discovery result as JSON to MQTT
-        try:
-            messages = []
-            for spa_id, payload in results.items():
-                topic = f"{self.config.mqtt.base_topic}/{spa_id}/discovery/result"
-                # Ensure payload is JSON serializable
-                safe_payload = self._make_serializable(payload)
-                messages.append(
-                    MQTTMessage(
-                        topic=topic,
-                        payload=json.dumps(safe_payload),
-                        qos=1,
-                        retain=True,
-                    )
-                )
-            # Log at INFO which discovery messages we will publish so operators
-            # can see them without enabling DEBUG.
-            for m in messages:
-                try:
-                    logger.info(
-                        "publishing-discovery-result",
-                        extra={"topic": m.topic, "retain": m.retain, "spa_id": spa_id},
-                    )
-                except Exception:
-                    pass
-            # topic_mapper.publish_messages expects instances of MQTTMessage from mapper class
-            # If we were given the mapper instance, it provides publish_messages
-            if hasattr(self.topic_mapper, "publish_messages"):
-                self.topic_mapper.publish_messages(messages)
-            else:
-                # best effort: try to access mqtt_client directly
-                mqtt_client = getattr(self.topic_mapper, "mqtt_client", None)
-                if mqtt_client is not None:
-                    for m in messages:
-                        mqtt_client.publish(
-                            topic=m.topic, payload=m.payload, qos=m.qos, retain=m.retain
-                        )
-        except Exception as e:
-            logger.error(f"Failed to publish discovery results to MQTT: {e}")
-
-        # Mark discovery as completed (T059)
-        if self.progress_tracker and HAS_PROGRESS_TRACKER:
-            self.progress_tracker.set_overall_phase(DiscoveryPhase.COMPLETED)
-
+        self._set_progress_phase(DiscoveryPhase.WRITING_YAML)
+        await self._persist_and_publish(results)
+        self._set_progress_phase(DiscoveryPhase.COMPLETED)
         return results
 
-    async def _probe_spa(self, spa: Any) -> Dict[str, Any]:
-        spa_id = str(getattr(spa, "id", "unknown"))
-        discovered_at = datetime.now(timezone.utc).isoformat()
+    def _start_progress(self, total_spas: int) -> None:
+        if not (self.progress_tracker and HAS_PROGRESS_TRACKER):
+            return
+        self.progress_tracker.start_discovery(total_spas=total_spas)
+        self.progress_tracker.set_overall_phase(DiscoveryPhase.FETCHING_SPAS)
 
-        # Estimate component count for progress tracking (T059)
-        # Status + Heater + typical components (we'll adjust as we discover)
-        estimated_components = 5  # status, heater, pumps, lights, etc.
+    def _set_progress_phase(self, phase: Any) -> None:
         if self.progress_tracker and HAS_PROGRESS_TRACKER:
-            self.progress_tracker.set_spa_component_count(spa_id, estimated_components)
+            self.progress_tracker.set_overall_phase(phase)
 
-        # Prepare result with the user's preferred structure: first capability hints
-        # (from python-smarttub), then basic spa info, then heater/lights/pumps.
-        result: Dict[str, Any] = {
+    async def _probe_spa_with_reporting(self, spa: Any, spa_id: str) -> dict[str, Any]:
+        spa_name = getattr(spa, "brand", "Unknown Spa")
+        if self.progress_tracker and HAS_PROGRESS_TRACKER:
+            self.progress_tracker.start_spa(spa_id, spa_name)
+            self.progress_tracker.set_overall_phase(DiscoveryPhase.PROBING_SPA)
+
+        try:
+            result = await self._probe_spa(spa)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error probing spa %s: %s", spa_id, exc)
+            self._track_probe_error(spa_id, exc)
+            if self.progress_tracker and HAS_PROGRESS_TRACKER:
+                self.progress_tracker.complete_spa(spa_id, error=str(exc))
+            return {
+                "spa_id": spa_id,
+                "discovered_at": datetime.now(UTC).isoformat(),
+                "error": str(exc),
+            }
+
+        if self.progress_tracker and HAS_PROGRESS_TRACKER:
+            self.progress_tracker.complete_spa(spa_id)
+        return result
+
+    def _track_probe_error(self, spa_id: str, error: Exception) -> None:
+        if not (self.error_tracker and HAS_ERROR_TRACKER):
+            return
+        self.error_tracker.track_error(
+            category=ErrorCategory.DISCOVERY,
+            message=f"Failed to probe spa {spa_id}: {error!s}",
+            severity=ErrorSeverity.ERROR,
+            error_code="DISCOVERY_PROBE_FAILED",
+            details={"spa_id": spa_id},
+        )
+
+    async def _persist_and_publish(self, results: dict[str, Any]) -> None:
+        safe_results = {
+            spa_id: self._make_serializable(payload)
+            for spa_id, payload in results.items()
+        }
+        try:
+            self.mqtt_publisher.publish_pump_metadata(safe_results)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to publish pump discovery metadata: %s", exc)
+
+        try:
+            await self.file_repository.save_async(safe_results)
+        except DiscoveryPersistenceError as exc:
+            logger.error("Failed to write discovered items YAML: %s", exc)
+            self._track_persistence_error(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Unexpected discovery persistence failure: %s", exc)
+            self._track_persistence_error(exc)
+
+        try:
+            self.mqtt_publisher.publish_results(safe_results)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to publish discovery results to MQTT: %s", exc)
+
+    def _track_persistence_error(self, error: Exception) -> None:
+        if not (self.error_tracker and HAS_ERROR_TRACKER):
+            return
+        self.error_tracker.track_error(
+            category=ErrorCategory.YAML_PARSING,
+            message=f"Discovery persistence failed: {error!s}",
+            severity=ErrorSeverity.ERROR,
+            error_code="YAML_WRITE_FAILED",
+        )
+
+    async def _probe_spa(self, spa: Any) -> dict[str, Any]:
+        """Collect one spa inventory while keeping failures component-scoped."""
+        spa_id = str(getattr(spa, "id", "unknown"))
+        if self.progress_tracker and HAS_PROGRESS_TRACKER:
+            self.progress_tracker.set_spa_component_count(spa_id, 5)
+
+        result: dict[str, Any] = {
             "spa_id": spa_id,
-            "discovered_at": discovered_at,
+            "discovered_at": datetime.now(UTC).isoformat(),
             "capabilities_python-smarttub": {},
             "spa": self._make_serializable(spa),
             "heater": {},
             "lights": [],
             "pumps": [],
             "errors": [],
-            # keep a generic capabilities bucket for runtime-added entries (e.g. destructive_probes)
             "capabilities": {},
         }
 
-        # 1) Status (heater, water)
+        await self._probe_status(spa, spa_id, result)
+        for method_name, result_key, error_key in (
+            ("get_status_full", "status_full", "status_full_error"),
+            ("get_debug_status", "debug_status", "debug_status_error"),
+            ("get_energy_usage", "energy_usage", "energy_usage_error"),
+            ("get_errors", "errors_list", "errors_list_error"),
+            ("get_reminders", "reminders", "reminders_error"),
+        ):
+            await self._probe_optional(
+                spa, spa_id, result, method_name, result_key, error_key
+            )
+
+        self._probe_features(spa, result)
+        result["pumps"] = await self._probe_pumps(spa, spa_id, result)
+        lights, light_objects = await self._probe_lights(spa, spa_id, result)
+        result["lights"] = lights
+        self._add_upstream_capabilities(result)
+
+        if getattr(self.config, "discovery_test_all_light_modes", False):
+            await self._probe_light_modes(spa, spa_id, light_objects, result)
+
+        if not result["errors"]:
+            result.pop("errors", None)
+        return result
+
+    async def _probe_status(
+        self, spa: Any, spa_id: str, result: dict[str, Any]
+    ) -> None:
         if self.progress_tracker and HAS_PROGRESS_TRACKER:
             self.progress_tracker.start_component(
                 spa_id, ComponentType.STATUS, "status"
             )
-
         try:
             status = await spa.get_status()
-            # Basic heater detection
+            water = getattr(status, "water", None)
             heater_present = getattr(status, "heater1Present", None)
             if heater_present is None:
-                # fallback: if status has water temperature -> assume heater exists
-                heater_present = getattr(status, "water", None) is not None
-
+                heater_present = water is not None
             result["heater"] = {
                 "present": bool(heater_present),
-                "water_temperature": getattr(
-                    getattr(status, "water", {}), "temperature", None
-                )
-                if getattr(status, "water", None)
-                else getattr(status, "water_temperature", None),
+                "water_temperature": (
+                    getattr(water, "temperature", None)
+                    if water is not None
+                    else getattr(status, "water_temperature", None)
+                ),
             }
-
-            # Complete status component (T059)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Status probe failed for spa %s: %s", spa_id, exc)
+            self._append_probe_error(result, "status_error", exc)
             if self.progress_tracker and HAS_PROGRESS_TRACKER:
                 self.progress_tracker.complete_component(
-                    spa_id,
-                    "status",
-                    example_info={
-                        "water_temp": result["heater"].get("water_temperature")
-                    },
+                    spa_id, "status", error=str(exc)
                 )
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Status probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"status_error: {str(e)}")
+            return
 
-            # Complete status with error (T059)
-            if self.progress_tracker and HAS_PROGRESS_TRACKER:
-                self.progress_tracker.complete_component(spa_id, "status", error=str(e))
-
-        # 1.1) Full Status (extended information)
-        try:
-            status_full = await spa.get_status_full()
-            result["status_full"] = self._make_serializable(status_full)
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Full status probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"status_full_error: {str(e)}")
-
-        # 1.2) Debug Status
-        try:
-            debug_status = await spa.get_debug_status()
-            result["debug_status"] = self._make_serializable(debug_status)
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Debug status probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"debug_status_error: {str(e)}")
-
-        # 1.3) Energy Usage
-        try:
-            energy_usage = await spa.get_energy_usage()
-            result["energy_usage"] = self._make_serializable(energy_usage)
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Energy usage probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"energy_usage_error: {str(e)}")
-
-        # 1.4) Errors
-        try:
-            errors = await spa.get_errors()
-            result["errors_list"] = self._make_serializable(errors)
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Errors probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"errors_list_error: {str(e)}")
-
-        # 1.5) Reminders
-        try:
-            reminders = await spa.get_reminders()
-            result["reminders"] = self._make_serializable(reminders)
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Reminders probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"reminders_error: {str(e)}")
-
-        # 1.6) ClearRay UV System (read-only check)
-        try:
-            # toggle_clearray is write-only, but we can check whether it's available
-            # by introspecting the object
-            has_clearray = hasattr(spa, "toggle_clearray") and callable(
-                getattr(spa, "toggle_clearray", None)
+        if self.progress_tracker and HAS_PROGRESS_TRACKER:
+            self.progress_tracker.complete_component(
+                spa_id,
+                "status",
+                example_info={"water_temp": result["heater"].get("water_temperature")},
             )
-            result["features"] = result.get("features", {})
-            result["features"]["clearray_available"] = has_clearray
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"ClearRay feature detection failed for spa {spa_id}: {e}")
-            result["errors"].append(f"clearray_detection_error: {str(e)}")
 
-        # 2) Pumps
+    async def _probe_optional(
+        self,
+        spa: Any,
+        spa_id: str,
+        result: dict[str, Any],
+        method_name: str,
+        result_key: str,
+        error_key: str,
+    ) -> None:
         try:
-            pumps = await spa.get_pumps()
-            # Keep the raw pump objects so we can optionally call methods if they are provided
-            raw_pump_objects = None
-            if pumps and isinstance(pumps, dict) and "pumps" in pumps:
-                raw_pump_objects = pumps.get("pumps", [])
-                for p in raw_pump_objects:
-                    # p may be a dict or a python-smarttub SpaPump object
-                    pid = None
-                    p_type = None
-                    supports = {}
-                    if isinstance(p, dict):
-                        pid = p.get("id") or p.get("pumpId")
-                        p_type = p.get("type")
-                        supports["state"] = "state" in p or "mode" in p
-                        supports["speed"] = "speed" in p
-                    else:
-                        # attempt to read common attributes, fallback to string
-                        pid = (
-                            getattr(p, "id", None) or getattr(p, "pumpId", None) or None
-                        )
-                        p_type = getattr(p, "type", None)
-                        supports["state"] = hasattr(p, "state") or hasattr(p, "mode")
-                        supports["speed"] = hasattr(p, "speed")
+            value = await getattr(spa, method_name)()
+            result[result_key] = self._make_serializable(value)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("%s probe failed for spa %s: %s", result_key, spa_id, exc)
+            self._append_probe_error(result, error_key, exc)
 
-                    # Serialize 'raw' but strip embedded spa metadata to avoid duplication
-                    raw_serialized = self._make_serializable(p)
-                    if isinstance(raw_serialized, dict) and "spa" in raw_serialized:
-                        raw_serialized.pop("spa", None)
-                    item = {"id": pid, "type": p_type, "raw": raw_serialized}
-                    item["supports"] = supports
-                    # advertise the pump-specific command topic so integrators
-                    # and users can discover where to publish control messages
-                    # T052: Use _writetopic convention instead of set_
-                    try:
-                        base = f"{self.config.mqtt.base_topic}/{spa_id}"
-                        item["state_writetopic"] = (
-                            f"{base}/pumps/{pid}/state_writetopic"
-                        )
-                    except Exception:
-                        item["state_writetopic"] = None
-                    result["pumps"].append(item)
-            else:
-                # Some spas return list directly or None
-                if isinstance(pumps, list):
-                    raw_pump_objects = pumps
-                    for p in raw_pump_objects:
-                        pid = (
-                            p.get("id")
-                            if isinstance(p, dict)
-                            else getattr(p, "id", None)
-                        )
-                        raw_serialized = self._make_serializable(p)
-                        if isinstance(raw_serialized, dict) and "spa" in raw_serialized:
-                            raw_serialized.pop("spa", None)
-                        item = {"id": pid, "raw": raw_serialized}
-                        # T052: Use _writetopic convention instead of set_
-                        try:
-                            base = f"{self.config.mqtt.base_topic}/{spa_id}"
-                            item["state_writetopic"] = (
-                                f"{base}/pumps/{pid}/state_writetopic"
-                            )
-                        except Exception:
-                            item["state_writetopic"] = None
-                        result["pumps"].append(item)
-                else:
-                    raw_pump_objects = []
-        except Exception as e:
-            logger.debug(f"Pump probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"pumps_error: {str(e)}")
+    @staticmethod
+    def _append_probe_error(
+        result: dict[str, Any], error_key: str, error: Exception
+    ) -> None:
+        result.setdefault("errors", []).append(f"{error_key}: {error!s}")
 
-        # 3) Lights
+    @staticmethod
+    def _probe_features(spa: Any, result: dict[str, Any]) -> None:
+        result["features"] = {
+            "clearray_available": callable(getattr(spa, "toggle_clearray", None))
+        }
+
+    async def _probe_pumps(
+        self, spa: Any, spa_id: str, result: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         try:
-            lights = await spa.get_lights()
-            raw_light_objects = None
-            if lights and isinstance(lights, dict) and "lights" in lights:
-                raw_light_objects = lights.get("lights", [])
-                for light_obj in raw_light_objects:
-                    # light_obj may be a dict or a SpaLight object
-                    if isinstance(light_obj, dict):
-                        lid = light_obj.get("id") or f"zone_{light_obj.get('zone')}"
-                        zone = light_obj.get("zone")
-                        color = light_obj.get("color")
-                        supports = {
-                            "color": bool(color),
-                            "brightness": "intensity" in light_obj
-                            or "brightness" in light_obj,
-                        }
-                        raw = self._make_serializable(light_obj)
-                    else:
-                        lid = (
-                            getattr(light_obj, "id", None)
-                            or f"zone_{getattr(light_obj, 'zone', 'unknown')}"
-                        )
-                        zone = getattr(light_obj, "zone", None)
-                        color = getattr(light_obj, "color", None)
-                        supports = {
-                            "color": getattr(light_obj, "color", None) is not None,
-                            "brightness": hasattr(light_obj, "intensity")
-                            or hasattr(light_obj, "brightness"),
-                        }
-                        raw = self._make_serializable(light_obj)
-
-                    # Ensure per-light raw doesn't duplicate spa metadata
-                    if isinstance(raw, dict) and "spa" in raw:
-                        raw.pop("spa", None)
-
-                    item = {
-                        "id": lid,
-                        "raw": raw,
-                        "supports": supports,
-                        "detected_modes": [],  # Will be populated by light mode discovery
-                    }
-                    result["lights"].append(item)
-            else:
-                if isinstance(lights, list):
-                    raw_light_objects = lights
-                    for light_item in raw_light_objects:
-                        # Compute lid with fallback to zone_X if id is None
-                        if isinstance(light_item, dict):
-                            lid = (
-                                light_item.get("id") or f"zone_{light_item.get('zone')}"
-                            )
-                        else:
-                            lid = (
-                                getattr(light_item, "id", None)
-                                or f"zone_{getattr(light_item, 'zone', 'unknown')}"
-                            )
-
-                        raw_serialized = self._make_serializable(light_item)
-                        if isinstance(raw_serialized, dict) and "spa" in raw_serialized:
-                            raw_serialized.pop("spa", None)
-
-                        result["lights"].append(
-                            {"id": lid, "raw": raw_serialized, "detected_modes": []}
-                        )
-                else:
-                    raw_light_objects = []
-        except Exception as e:
-            logger.debug(f"Light probe failed for spa {spa_id}: {e}")
-            result["errors"].append(f"lights_error: {str(e)}")
-
-        # 4) Non-destructive capability introspection (python-smarttub enums / options)
-        try:
-            # Attempt to import the upstream library and extract enums so we don't have to re-probe
-            import smarttub
-
-            pump_states = [m.name for m in smarttub.SpaPump.PumpState]
-            pump_types = [m.name for m in smarttub.SpaPump.PumpType]
-            light_modes = [m.name for m in smarttub.SpaLight.LightMode]
-
-            # Put python-smarttub-derived enums into the dedicated key the user requested
-            result["capabilities_python-smarttub"].update(
-                {
-                    "pump_states": pump_states,
-                    "pump_types": pump_types,
-                    "light_modes": light_modes,
-                    # Reasonable assumption / hint for integrators; intensity semantics are not strictly typed
-                    "light_intensity": {"min": 0, "max": 100, "example": 50},
-                }
-            )
-        except Exception as e:  # pragma: no cover - best-effort introspection
-            logger.debug(f"Could not introspect python-smarttub enums: {e}")
-
-        # 5) Systematic light mode testing if enabled
-        if getattr(self.config, "discovery_test_all_light_modes", False):
-            try:
-                # Check if spa is online before starting discovery
-                try:
-                    status = await spa.get_status()
-                    is_online = getattr(status, "online", None)
-                    if is_online == "OFFLINE" or is_online is False:
-                        logger.warning(
-                            f"⚠️  Spa {spa_id} is OFFLINE - skipping light mode discovery"
-                        )
-                        return result
-                    logger.info(f"✓ Spa {spa_id} is online (status: {is_online})")
-                except Exception as e:
-                    logger.warning(f"⚠️  Could not verify spa online status: {e}")
-                    # Continue anyway - might still work
-
-                light_objs = (
-                    raw_light_objects
-                    if "raw_light_objects" in locals() and raw_light_objects is not None
-                    else []
-                )
-
-                # Publish discovery status: testing
-                try:
-                    status_topic = (
-                        f"{self.config.mqtt.base_topic}/{spa_id}/discovery/status"
-                    )
-                    mqtt_client = getattr(self.topic_mapper, "mqtt_client", None)
-                    if mqtt_client:
-                        mqtt_client.publish(status_topic, "testing", retain=True)
-                except Exception:
-                    pass
-
-                # Systematic testing of all light modes with zone isolation
-                light_test_results = []
-
-                # Helper function to turn off a zone with rate limiting
-                async def turn_off_zone(zone_num):
-                    try:
-                        # Try using light object's turn_off() method first
-                        light_to_turn_off = next(
-                            (
-                                light
-                                for light in light_objs
-                                if getattr(light, "zone", None) == zone_num
-                            ),
-                            None,
-                        )
-                        if light_to_turn_off:
-                            try:
-                                await light_to_turn_off.turn_off()
-                                logger.debug(
-                                    f"Turned OFF zone {zone_num} using light.turn_off()"
-                                )
-                                return
-                            except Exception as e:
-                                logger.debug(
-                                    f"light.turn_off() failed for zone {zone_num}: {e}, trying direct API"
-                                )
-
-                        # Fallback to direct API with rate limiting
-                        body = {"intensity": 0, "mode": "OFF"}
-                        success = await self._safe_request_with_retry(
-                            spa, "PATCH", f"lights/{zone_num}", body, max_retries=2
-                        )
-                        if success:
-                            logger.debug(f"Turned OFF zone {zone_num} via direct API")
-                        else:
-                            logger.warning(f"Failed to turn OFF zone {zone_num}")
-                    except Exception as e:
-                        logger.debug(f"Failed to turn OFF zone {zone_num}: {e}")
-
-                # Turn OFF all zones before starting
-                logger.info("🔄 Preparing test environment - turning OFF all zones")
-                for l_obj in light_objs:
-                    zone_num = getattr(l_obj, "zone", None)
-                    if zone_num:
-                        await turn_off_zone(zone_num)
-
-                await asyncio.sleep(15)  # Zone isolation delay
-
-                # Test each zone with proper isolation
-                for idx, l_obj in enumerate(light_objs):
-                    zone_num = getattr(l_obj, "zone", None)
-                    logger.info(f"🔍 Starting discovery for zone {zone_num}")
-
-                    zone_results = await self._test_all_light_modes(spa, l_obj, spa_id)
-                    light_test_results.append(zone_results)
-
-                    # Turn zone OFF and pause before next zone (if not last zone)
-                    if idx < len(light_objs) - 1:
-                        await turn_off_zone(zone_num)
-                        logger.info(
-                            f"✅ Zone {zone_num} complete. Pausing 15s before next zone..."
-                        )
-                        await asyncio.sleep(15)  # Zone isolation delay
-
-                # Store results in capabilities
-                if light_test_results:
-                    result["capabilities"]["light_mode_tests"] = light_test_results
-
-                # Publish discovery status: connected
-                try:
-                    status_topic = (
-                        f"{self.config.mqtt.base_topic}/{spa_id}/discovery/status"
-                    )
-                    mqtt_client = getattr(self.topic_mapper, "mqtt_client", None)
-                    if mqtt_client:
-                        mqtt_client.publish(status_topic, "connected", retain=True)
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.debug(
-                    f"Systematic light mode testing failed for spa {spa_id}: {e}"
-                )
-                result.setdefault("errors", []).append(f"light_mode_tests_error: {e}")
-
-        # Remove 'errors' key if empty
-        if not result["errors"]:
-            result.pop("errors", None)
-
-        return result
-
-    def _write_yaml(self, discovery_results: Dict[str, Any]) -> None:
-        # Try to persist into /config so the directory can be mounted into the container.
-        config_dir = Path("/config")
-        config_file = config_dir / "discovered_items.yaml"
-        raw_data_file = config_dir / "spa_raw_data.yaml"
-
-        # Fallback to local config directory for development
-        local_config_dir = Path(__file__).resolve().parents[1] / "config"
-        local_config_file = local_config_dir / "discovered_items.yaml"
-        local_raw_data_file = local_config_dir / "spa_raw_data.yaml"
-
-        # Sort keys in logical order and clean up duplicates
-        sorted_results = {}
-        raw_data_results = {}
-
-        # Keys that go into discovered_items.yaml (compact version)
-        compact_keys = [
-            "spa_id",
-            "discovered_at",
-            "capabilities",
-            "spa",
-            "heater",
-            "pumps",
-            "lights",
+            payload = await spa.get_pumps()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Pump probe failed for spa %s: %s", spa_id, exc)
+            self._append_probe_error(result, "pumps_error", exc)
+            return []
+        return [
+            self._pump_inventory_item(pump, spa_id)
+            for pump in self._collection(payload, "pumps")
         ]
 
-        # Keys that go into spa_raw_data.yaml (detailed raw data)
-        raw_data_keys = [
-            "status_full",
-            "debug_status",
-            "capabilities_python-smarttub",
-            "errors",
-            "reminders",
-            "energy_usage",
-        ]
+    def _pump_inventory_item(self, pump: Any, spa_id: str) -> dict[str, Any]:
+        if isinstance(pump, dict):
+            pump_id = pump.get("id") or pump.get("pumpId")
+            pump_type = pump.get("type")
+            supports = {
+                "state": "state" in pump or "mode" in pump,
+                "speed": "speed" in pump,
+            }
+        else:
+            pump_id = getattr(pump, "id", None) or getattr(pump, "pumpId", None)
+            pump_type = getattr(pump, "type", None)
+            supports = {
+                "state": hasattr(pump, "state") or hasattr(pump, "mode"),
+                "speed": hasattr(pump, "speed"),
+            }
+        return {
+            "id": pump_id,
+            "type": pump_type,
+            "raw": self._serialized_without_spa(pump),
+            "supports": supports,
+            "state_writetopic": (
+                f"{self.config.mqtt.base_topic}/{spa_id}/pumps/"
+                f"{pump_id}/state_writetopic"
+            ),
+        }
 
-        for spa_id, result in discovery_results.items():
-            # Build compact result for discovered_items.yaml
-            compact_result = {}
-            for key in compact_keys:
-                if key in result:
-                    compact_result[key] = result[key]
-
-            # Build raw data result for spa_raw_data.yaml
-            raw_result = {}
-            for key in raw_data_keys:
-                if key in result:
-                    raw_result[key] = result[key]
-
-            # Add any remaining keys to raw data (safety net)
-            for key in result.keys():
-                if key not in compact_keys and key not in raw_data_keys:
-                    raw_result[key] = result[key]
-
-            # Clean up duplicates: since spa_id is already the key, we can remove redundant spa info
-            # Keep only essential spa info (name, model) if present
-            if "spa" in compact_result and isinstance(compact_result["spa"], dict):
-                spa_info = compact_result["spa"]
-                # Keep only essential fields, remove duplicates
-                essential_spa = {}
-                if "name" in spa_info:
-                    essential_spa["name"] = spa_info["name"]
-                if "model" in spa_info:
-                    essential_spa["model"] = spa_info["model"]
-                if essential_spa:
-                    compact_result["spa"] = essential_spa
-                else:
-                    # If no essential info, remove the spa key entirely
-                    compact_result.pop("spa", None)
-
-            # Shorten state_writetopic paths by removing spa_id (since it's already in the parent key)
-            # T052: Updated to handle _writetopic suffix instead of set_ prefix
-            for component in ["pumps", "lights"]:
-                if component in compact_result and isinstance(
-                    compact_result[component], list
-                ):
-                    for item in compact_result[component]:
-                        if "state_writetopic" in item and item["state_writetopic"]:
-                            # Remove spa_id from topic path:
-                            # base_topic/spa_id/component/id/state_writetopic -> component/id/state_writetopic
-                            topic_parts = item["state_writetopic"].split("/")
-                            if len(topic_parts) >= 4 and topic_parts[-3] == component:
-                                # Reconstruct without spa_id: component/id/state_writetopic
-                                item["state_writetopic"] = (
-                                    f"{component}/{topic_parts[-2]}/{topic_parts[-1]}"
-                                )
-
-            sorted_results[spa_id] = compact_result
-            raw_data_results[spa_id] = raw_result
-
-        # Save compact version under 'discovered_items'
-        compact_data = {"discovered_items": sorted_results}
-
-        # Save raw data under 'discovered_items' (keeping same structure for consistency)
-        raw_data = {"discovered_items": raw_data_results}
-
-        # Serialize both
+    async def _probe_lights(
+        self, spa: Any, spa_id: str, result: dict[str, Any]
+    ) -> tuple[list[dict[str, Any]], list[Any]]:
         try:
-            compact_text = yaml.safe_dump(compact_data, sort_keys=False)
-            raw_text = yaml.safe_dump(raw_data, sort_keys=False)
-        except Exception as e:
-            logger.error(f"Failed to serialize discovery results to YAML: {e}")
+            payload = await spa.get_lights()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Light probe failed for spa %s: %s", spa_id, exc)
+            self._append_probe_error(result, "lights_error", exc)
+            return [], []
 
-            # Track YAML serialization error (T058)
-            if self.error_tracker and HAS_ERROR_TRACKER:
-                self.error_tracker.track_error(
-                    category=ErrorCategory.YAML_PARSING,
-                    message=f"YAML serialization failed: {str(e)}",
-                    severity=ErrorSeverity.ERROR,
-                    error_code="YAML_DUMP_FAILED",
-                )
-            return  # Cannot proceed without serialized data
+        raw_lights = self._collection(payload, "lights")
+        inventory = [self._light_inventory_item(light) for light in raw_lights]
+        mutable_objects = [light for light in raw_lights if not isinstance(light, dict)]
+        return inventory, mutable_objects
 
-        # Try to write to /config first
-        config_success = False
+    def _light_inventory_item(self, light: Any) -> dict[str, Any]:
+        if isinstance(light, dict):
+            zone = light.get("zone")
+            light_id = light.get("id") or f"zone_{zone}"
+            color = light.get("color")
+            cycle_speed = light.get("cycleSpeed", light.get("cycle_speed"))
+            supports = {
+                "color": color is not None,
+                "brightness": "intensity" in light or "brightness" in light,
+                "cycle_speed": cycle_speed is not None,
+            }
+        else:
+            zone = getattr(light, "zone", None)
+            zone_label = zone if zone is not None else "unknown"
+            light_id = getattr(light, "id", None) or f"zone_{zone_label}"
+            color = getattr(light, "color", None)
+            cycle_speed = getattr(
+                light, "cycleSpeed", getattr(light, "cycle_speed", None)
+            )
+            supports = {
+                "color": color is not None,
+                "brightness": hasattr(light, "intensity")
+                or hasattr(light, "brightness"),
+                "cycle_speed": cycle_speed is not None,
+            }
+        return {
+            "id": light_id,
+            "raw": self._serialized_without_spa(light),
+            "cycle_speed": cycle_speed,
+            "supports": supports,
+            "detected_modes": [],
+        }
+
+    def _serialized_without_spa(self, value: Any) -> Any:
+        serialized = self._make_serializable(value)
+        if isinstance(serialized, dict):
+            serialized.pop("spa", None)
+        return serialized
+
+    @staticmethod
+    def _collection(payload: Any, key: str) -> list[Any]:
+        if isinstance(payload, dict):
+            items = payload.get(key, [])
+            return items if isinstance(items, list) else []
+        return payload if isinstance(payload, list) else []
+
+    @staticmethod
+    def _add_upstream_capabilities(result: dict[str, Any]) -> None:
         try:
-            config_dir.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(compact_text, encoding="utf-8")
-            raw_data_file.write_text(raw_text, encoding="utf-8")
-            logger.info(f"Wrote discovered items to {config_file}")
-            logger.info(f"Wrote raw data to {raw_data_file}")
-            config_success = True
-        except Exception as e:
-            logger.debug(f"Could not write to {config_file}: {e}")
+            import smarttub  # type: ignore[import-untyped]
 
-            # Track file write error (T058)
-            if self.error_tracker and HAS_ERROR_TRACKER:
-                self.error_tracker.track_error(
-                    category=ErrorCategory.YAML_PARSING,
-                    message=f"Failed to write YAML to {config_file}: {str(e)}",
-                    severity=ErrorSeverity.WARNING,
-                    error_code="YAML_WRITE_FAILED",
-                    details={"file_path": str(config_file)},
-                )
+            capabilities = {
+                "pump_states": [member.name for member in smarttub.SpaPump.PumpState],
+                "pump_types": [member.name for member in smarttub.SpaPump.PumpType],
+                "light_modes": [member.name for member in smarttub.SpaLight.LightMode],
+                "primary_filtration_modes": [
+                    member.name
+                    for member in (
+                        smarttub.SpaPrimaryFiltrationCycle.PrimaryFiltrationMode
+                    )
+                ],
+                "light_cycle_speed": {
+                    "supported": True,
+                    "field": "cycleSpeed",
+                    "read_only": True,
+                },
+                "light_intensity": {"min": 0, "max": 100, "example": 50},
+            }
+            result["capabilities_python-smarttub"].update(capabilities)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not introspect python-smarttub enums: %s", exc)
 
-        # If /config failed, try local config directory
-        if not config_success:
-            try:
-                local_config_dir.mkdir(parents=True, exist_ok=True)
-                local_config_file.write_text(compact_text, encoding="utf-8")
-                local_raw_data_file.write_text(raw_text, encoding="utf-8")
-                logger.info(f"Wrote discovered items to {local_config_file} (fallback)")
-                logger.info(f"Wrote raw data to {local_raw_data_file} (fallback)")
-            except Exception as e:
+    async def _probe_light_modes(
+        self,
+        spa: Any,
+        spa_id: str,
+        light_objects: list[Any],
+        result: dict[str, Any],
+    ) -> None:
+        try:
+            status = await spa.get_status()
+            online = getattr(status, "online", None)
+            online_name = getattr(online, "name", online)
+            if online_name == "OFFLINE" or online is False:
                 logger.warning(
-                    f"Could not write to fallback location {local_config_file}: {e}"
+                    "Spa %s is offline; skipping light mode discovery", spa_id
                 )
+                return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not verify spa %s online status: %s", spa_id, exc)
 
-        # Also write a copy into the repository tests/ directory so the generated
-        # discovery output is visible to developers running in this workspace.
         try:
-            repo_path = (
-                Path(__file__).resolve().parents[2]
-                / "tests"
-                / "discovered_items.generated.yaml"
-            )
-            repo_raw_path = (
-                Path(__file__).resolve().parents[2]
-                / "tests"
-                / "spa_raw_data.generated.yaml"
-            )
-            repo_path.parent.mkdir(parents=True, exist_ok=True)
-            repo_path.write_text(compact_text, encoding="utf-8")
-            repo_raw_path.write_text(raw_text, encoding="utf-8")
-            logger.info(f"Wrote discovered items copy to {repo_path}")
-            logger.info(f"Wrote raw data copy to {repo_raw_path}")
-        except Exception:
-            # Do not fail the main flow if writing into the workspace fails
+            self.mqtt_publisher.publish_status(spa_id, "testing")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not publish discovery testing status: %s", exc)
+
+        try:
+            tests = []
+            for light in light_objects:
+                logger.info(
+                    "Starting discovery for spa %s light zone %s",
+                    spa_id,
+                    getattr(light, "zone", None),
+                )
+                tests.append(await self._test_all_light_modes(spa, light, spa_id))
+            if tests:
+                result["capabilities"]["light_mode_tests"] = tests
+        except Exception as exc:  # noqa: BLE001
             logger.debug(
-                "Failed to write discovered items into workspace tests directory"
+                "Systematic light mode testing failed for spa %s: %s", spa_id, exc
             )
+            self._append_probe_error(result, "light_mode_tests_error", exc)
+            return
+
+        try:
+            self.mqtt_publisher.publish_status(spa_id, "connected")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not publish discovery connected status: %s", exc)
+
+    def _write_yaml(self, discovery_results: dict[str, Any]) -> None:
+        """Compatibility wrapper around the extracted file repository."""
+        self.file_repository.save(discovery_results)
 
     def _make_serializable(self, obj: Any) -> Any:
-        """Return a JSON/YAML-serializable representation of obj.
+        """Compatibility wrapper for the extracted discovery serializer."""
+        return make_serializable(obj)
 
-        Handles dicts, lists, simple scalars, and attempts to turn objects into
-        dicts via to_dict, __dict__ or attribute inspection. Falls back to str().
-        """
-        # Scalars
-        if obj is None or isinstance(obj, (str, int, float, bool)):
-            return obj
+    @staticmethod
+    def _capture_light_state(light: Any) -> dict[str, Any] | None:
+        """Compatibility wrapper around the shared discovery engine."""
+        return LightDiscoveryEngine.capture_light_state(light)
 
-        # dict-like
-        if isinstance(obj, dict):
-            return {str(k): self._make_serializable(v) for k, v in obj.items()}
-
-        # list/tuple
-        if isinstance(obj, (list, tuple)):
-            return [self._make_serializable(v) for v in obj]
-
-        # Objects from python-smarttub may have to_dict or simple attributes
-        if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
-            try:
-                return self._make_serializable(obj.to_dict())
-            except Exception:
-                pass
-
-        # Attempt __dict__ serialization
-        if hasattr(obj, "__dict__"):
-            try:
-                return self._make_serializable(
-                    {k: v for k, v in vars(obj).items() if not k.startswith("_")}
-                )
-            except Exception:
-                pass
-
-        # Fallback: string representation
-        try:
-            return str(obj)
-        except Exception:
-            return None
+    async def _restore_light_state_safely(
+        self, light: Any, original_state: dict[str, Any] | None
+    ) -> bool | None:
+        """Compatibility wrapper around the shared discovery engine."""
+        return await self.discovery_engine.restore_light_state(light, original_state)
 
     async def _test_all_light_modes(
         self, spa: Any, light_obj: Any, spa_id: str
-    ) -> Dict[str, Any]:
-        """Systematically test all light modes and brightness levels for a specific light zone.
+    ) -> dict[str, Any]:
+        """Run exhaustive mode testing through the shared safe transaction."""
 
-        Args:
-            spa: Spa object
-            light_obj: Light object to test
-            spa_id: Spa ID for MQTT publishing
+        async def probe() -> dict[str, Any]:
+            return await self._test_all_light_modes_impl(spa, light_obj, spa_id)
 
-        Returns:
-            Dict with test results for this zone
-        """
-        zone = getattr(light_obj, "zone", None)
-        zone_id = getattr(light_obj, "id", f"zone_{zone}")
+        result, restored = await self.discovery_engine.run_probe(
+            spa_id, light_obj, probe
+        )
+        result["state_restored"] = restored
+        return result
+
+    async def _test_all_light_modes_impl(
+        self, spa: Any, light_obj: Any, spa_id: str
+    ) -> dict[str, Any]:
+        """Execute the exhaustive CLI mode plan through small phases."""
+        zone = int(getattr(light_obj, "zone", 0) or 0)
+        result = self._new_light_mode_result(light_obj, zone)
+        all_modes = available_light_mode_names()
+        logger.info(
+            "Starting exhaustive light mode testing for %s zone %s", spa_id, zone
+        )
+
+        candidates = await self._run_canonical_phase(
+            spa, light_obj, spa_id, zone, all_modes, result
+        )
+        await self._run_brightness_phase(
+            spa, light_obj, spa_id, zone, candidates, result
+        )
+        await self._add_rgb_capability(spa, spa_id, zone, result)
+        result["unsupported_modes"] = [
+            mode for mode in all_modes if mode not in result["supported_modes"]
+        ]
+        summary = result["test_summary"]
+        logger.info(
+            "Completed light mode testing for zone %s: %s/%s successful",
+            zone,
+            summary["successful_tests"],
+            summary["total_tests"],
+        )
+        return result
+
+    @staticmethod
+    def _new_light_mode_result(light_obj: Any, zone: int) -> dict[str, Any]:
         zone_type = getattr(light_obj, "zone_type", None)
-
-        logger.info(f"Starting exhaustive light mode testing for {spa_id} zone {zone}")
-
-        result: Dict[str, Any] = {
-            "id": zone_id,
+        return {
+            "id": getattr(light_obj, "id", None) or f"zone_{zone}",
             "zone": zone,
             "zone_type": str(zone_type) if zone_type else None,
             "supported_modes": {},
             "unsupported_modes": [],
+            "mode_results": {},
             "test_summary": {
                 "total_tests": 0,
                 "successful_tests": 0,
@@ -1017,359 +551,281 @@ class ItemProber:
             },
         }
 
-        # Capture original state (not used for restoration due to API limitations)
-        try:
-            _ = getattr(light_obj, "mode", None)
-            _ = getattr(light_obj, "intensity", None)
-            # Note: We intentionally don't restore state because:
-            # 1. get_status_full() doesn't reliably return current state on 2020+ models
-            # 2. Setting modes may fail or timeout
-            # User can manually set desired state after discovery
-        except Exception as e:
-            logger.debug(f"Failed to capture original light state: {e}")
-
-        # Optimized two-phase testing:
-        # Phase 1: Test every mode at a canonical brightness to quickly filter supported modes.
-        #   - OFF -> test at 0%
-        #   - others -> test at 100%
-        # Phase 2: For modes that passed, test remaining brightness levels [0,25,50,75]
-        phase1_candidates: List[str] = []
-
-        total_phase1 = len(self.ALL_LIGHT_MODES)
-        # Phase 1
-        for idx, mode_name in enumerate(self.ALL_LIGHT_MODES, 1):
-            # pick canonical brightness
-            if mode_name == "OFF":
-                brightness = 0
-            else:
-                brightness = 100
-
-            # publish progress
-            try:
-                base_topic = self.config.mqtt.base_topic
-                progress_topic = f"{base_topic}/{spa_id}/discovery/progress"
-                detail_topic = f"{base_topic}/{spa_id}/discovery/detail"
-                mqtt_client = getattr(self.topic_mapper, "mqtt_client", None)
-                if mqtt_client:
-                    mqtt_client.publish(
-                        progress_topic, f"{idx}/{total_phase1}", retain=False
-                    )
-                    mqtt_client.publish(
-                        detail_topic,
-                        f"Phase1: Testing zone {zone}: {mode_name} @ {brightness}%",
-                        retain=False,
-                    )
-            except Exception:
-                pass
-
-            result["test_summary"]["total_tests"] += 1
-            ok = await self._test_light_mode(
+    async def _run_canonical_phase(
+        self,
+        spa: Any,
+        light_obj: Any,
+        spa_id: str,
+        zone: int,
+        modes: tuple[str, ...],
+        result: dict[str, Any],
+    ) -> list[str]:
+        candidates = []
+        for index, mode_name in enumerate(modes, 1):
+            brightness = 0 if mode_name == "OFF" else 100
+            self._publish_test_progress(
+                spa_id,
+                index,
+                len(modes),
+                f"Phase1: Testing zone {zone}: {mode_name} @ {brightness}%",
+            )
+            test_result = await self._test_light_mode(
                 spa, light_obj, mode_name, brightness, zone, spa_id
             )
-            if ok:
-                phase1_candidates.append(mode_name)
-                result["test_summary"]["successful_tests"] += 1
-            else:
-                result["test_summary"]["failed_tests"] += 1
-
-            # brief pause between phase1 tests
+            result["mode_results"][mode_name] = test_result
+            self._record_test_outcome(result, test_result)
+            if is_mode_detected(test_result["status"]):
+                candidates.append(mode_name)
             await asyncio.sleep(self.LIGHT_TEST_DELAY_SECONDS)
+        return candidates
 
-        # Phase 2: for each candidate, test additional brightness levels (exclude 100)
-        secondary_levels = [b for b in self.BRIGHTNESS_LEVELS if b != 100]
-        # total tests for progress display
-        total_phase2 = sum(
-            len(secondary_levels) if m != "OFF" else 1 for m in phase1_candidates
-        )
-        pcount = 0
-        for mode_name in phase1_candidates:
-            mode_results: Dict[str, Any] = {"brightness_support": [], "rgb": None}
+    async def _run_brightness_phase(
+        self,
+        spa: Any,
+        light_obj: Any,
+        spa_id: str,
+        zone: int,
+        candidates: list[str],
+        result: dict[str, Any],
+    ) -> None:
+        levels = tuple(level for level in self.BRIGHTNESS_LEVELS if level != 100)
+        total = sum(len(levels) for mode in candidates if mode != "OFF")
+        current = 0
+        for mode_name in candidates:
+            mode_result: dict[str, Any] = {
+                "brightness_support": [],
+                "test_results": {},
+                "rgb": None,
+            }
+            result["supported_modes"][mode_name] = mode_result
             if mode_name == "OFF":
-                # already tested OFF at 0% in phase1
-                mode_results["brightness_support"].append(0)
-                result["supported_modes"][mode_name] = mode_results
+                mode_result["brightness_support"].append(0)
                 continue
 
-            for brightness in secondary_levels:
-                pcount += 1
-                # publish progress (phase2)
-                try:
-                    base_topic = self.config.mqtt.base_topic
-                    progress_topic = f"{base_topic}/{spa_id}/discovery/progress"
-                    detail_topic = f"{base_topic}/{spa_id}/discovery/detail"
-                    mqtt_client = getattr(self.topic_mapper, "mqtt_client", None)
-                    if mqtt_client:
-                        mqtt_client.publish(
-                            progress_topic, f"{pcount}/{total_phase2}", retain=False
-                        )
-                        mqtt_client.publish(
-                            detail_topic,
-                            f"Phase2: Testing zone {zone}: {mode_name} @ {brightness}%",
-                            retain=False,
-                        )
-                except Exception:
-                    pass
-
-                result["test_summary"]["total_tests"] += 1
-                ok = await self._test_light_mode(
-                    spa, light_obj, mode_name, brightness, zone, spa_id
+            for brightness in levels:
+                current += 1
+                await self._test_brightness(
+                    spa,
+                    light_obj,
+                    spa_id,
+                    zone,
+                    mode_name,
+                    brightness,
+                    current,
+                    total,
+                    mode_result,
+                    result,
                 )
-                if ok:
-                    mode_results["brightness_support"].append(brightness)
-                    result["test_summary"]["successful_tests"] += 1
-                    # For WHITE mode, capture RGB values once
-                    if mode_name == "WHITE" and mode_results["rgb"] is None:
-                        try:
-                            lights = await spa.get_lights()
-                            if lights:
-                                # get_lights() returns a list directly
-                                for light in lights:
-                                    if getattr(light, "zone", None) == zone:
-                                        mode_results["rgb"] = {
-                                            "red": getattr(light, "red", 0),
-                                            "green": getattr(light, "green", 0),
-                                            "blue": getattr(light, "blue", 0),
-                                            "white": getattr(light, "white", 0),
-                                        }
-                                        break
-                        except Exception:
-                            pass
-                else:
-                    result["test_summary"]["failed_tests"] += 1
-
-                await asyncio.sleep(self.LIGHT_TEST_DELAY_SECONDS)
-
-            # If canonical 100% succeeded, include 100 in brightness support
-            if 100 not in mode_results["brightness_support"]:
-                mode_results["brightness_support"].append(100)
-
-            # sort levels
-            mode_results["brightness_support"] = sorted(
-                set(mode_results["brightness_support"])
+            self._include_canonical_brightness(mode_name, mode_result, result)
+            mode_result["brightness_support"] = sorted(
+                set(mode_result["brightness_support"])
             )
 
-            result["supported_modes"][mode_name] = mode_results
-
-        # Phase 3: Test RGB color capabilities for FULL_DYNAMIC_RGB mode
-        if "FULL_DYNAMIC_RGB" in result["supported_modes"]:
-            logger.info(f"Phase 3: Testing RGB color capabilities for zone {zone}")
-            rgb_test_result = await self._test_rgb_color_capability(spa, zone, spa_id)
-            if rgb_test_result:
-                result["supported_modes"]["FULL_DYNAMIC_RGB"]["rgb_capability"] = (
-                    rgb_test_result
-                )
-
-        # Any mode that was not in phase1_candidates is unsupported
-        for m in self.ALL_LIGHT_MODES:
-            if m not in result["supported_modes"]:
-                result["unsupported_modes"].append(m)
-
-        # Always turn lights OFF after discovery test (safe default)
-        try:
-            logger.info(f"Turning off zone {zone} after discovery test")
-            await spa.request(
-                "PATCH", f"lights/{zone}", {"mode": "OFF", "intensity": 0}
-            )
-            await asyncio.sleep(3)
-            logger.info(f"Zone {zone} turned off successfully")
-        except Exception as e:
-            logger.error(f"Failed to turn off lights for zone {zone}: {e}")
-            # Try alternative method
-            try:
-                set_mode_fn = getattr(light_obj, "set_mode", None)
-                if callable(set_mode_fn):
-                    maybe = set_mode_fn("OFF", 0)
-                    if asyncio.iscoroutine(maybe):
-                        await asyncio.wait_for(
-                            maybe, timeout=self.config.safety.command_timeout_seconds
-                        )
-                    logger.info(f"Zone {zone} turned off via fallback method")
-            except Exception as e2:
-                logger.error(f"Fallback method also failed for zone {zone}: {e2}")
-
-        logger.info(
-            f"Completed light mode testing for zone {zone}: "
-            f"{result['test_summary']['successful_tests']}/{result['test_summary']['total_tests']} successful"
+    async def _test_brightness(
+        self,
+        spa: Any,
+        light_obj: Any,
+        spa_id: str,
+        zone: int,
+        mode_name: str,
+        brightness: int,
+        current: int,
+        total: int,
+        mode_result: dict[str, Any],
+        result: dict[str, Any],
+    ) -> None:
+        self._publish_test_progress(
+            spa_id,
+            current,
+            total,
+            f"Phase2: Testing zone {zone}: {mode_name} @ {brightness}%",
         )
+        test_result = await self._test_light_mode(
+            spa, light_obj, mode_name, brightness, zone, spa_id
+        )
+        mode_result["test_results"][str(brightness)] = test_result
+        if test_result["status"] == LightModeTestStatus.SUPPORTED.value:
+            mode_result["brightness_support"].append(brightness)
+            if mode_name == "WHITE" and mode_result["rgb"] is None:
+                mode_result["rgb"] = await self._read_light_rgb(spa, zone)
+        self._record_test_outcome(result, test_result)
+        await asyncio.sleep(self.LIGHT_TEST_DELAY_SECONDS)
 
-        return result
+    def _publish_test_progress(
+        self, spa_id: str, current: int, total: int, detail: str
+    ) -> None:
+        try:
+            self.mqtt_publisher.publish_progress(
+                spa_id,
+                current=current,
+                total=total,
+                detail=detail,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not publish discovery progress: %s", exc)
+
+    @staticmethod
+    def _record_test_outcome(
+        result: dict[str, Any], test_result: dict[str, Any]
+    ) -> None:
+        summary = result["test_summary"]
+        summary["total_tests"] += 1
+        if is_mode_detected(test_result["status"]):
+            summary["successful_tests"] += 1
+        else:
+            summary["failed_tests"] += 1
+
+    @staticmethod
+    def _include_canonical_brightness(
+        mode_name: str,
+        mode_result: dict[str, Any],
+        result: dict[str, Any],
+    ) -> None:
+        canonical = result["mode_results"][mode_name]
+        if (
+            canonical["status"] == LightModeTestStatus.SUPPORTED.value
+            and 100 not in mode_result["brightness_support"]
+        ):
+            mode_result["brightness_support"].append(100)
+
+    @staticmethod
+    async def _read_light_rgb(spa: Any, zone: int) -> dict[str, int] | None:
+        try:
+            lights = await spa.get_lights()
+        except Exception:  # noqa: BLE001
+            return None
+        for light in lights or []:
+            if getattr(light, "zone", None) == zone:
+                return {
+                    "red": getattr(light, "red", 0),
+                    "green": getattr(light, "green", 0),
+                    "blue": getattr(light, "blue", 0),
+                    "white": getattr(light, "white", 0),
+                }
+        return None
+
+    async def _add_rgb_capability(
+        self,
+        spa: Any,
+        spa_id: str,
+        zone: int,
+        result: dict[str, Any],
+    ) -> None:
+        modes = result["supported_modes"]
+        if "FULL_DYNAMIC_RGB" not in modes:
+            return
+        logger.info("Phase 3: Testing RGB color capabilities for zone %s", zone)
+        rgb_result = await self._test_rgb_color_capability(spa, zone, spa_id)
+        if rgb_result:
+            modes["FULL_DYNAMIC_RGB"]["rgb_capability"] = rgb_result
 
     async def _test_rgb_color_capability(
         self, spa: Any, zone: int, spa_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Test if RGB color control works for FULL_DYNAMIC_RGB mode.
-
-        Tests:
-        1. Set pure RED (255,0,0) and verify
-        2. Set pure GREEN (0,255,0) and verify
-        3. Set pure BLUE (0,0,255) and verify
-        4. Set WHITE (255,255,255) and verify
-
-        Returns:
-            Dict with color test results or None if tests failed
-        """
-        logger.info(f"Testing RGB color capability for zone {zone}")
-
-        test_colors = [
+    ) -> dict[str, Any] | None:
+        """Test four representative colors and require three verified results."""
+        logger.info("Testing RGB color capability for spa %s zone %s", spa_id, zone)
+        test_colors = (
             ("RED", {"red": 255, "green": 0, "blue": 0}),
             ("GREEN", {"red": 0, "green": 255, "blue": 0}),
             ("BLUE", {"red": 0, "green": 0, "blue": 255}),
             ("WHITE", {"red": 255, "green": 255, "blue": 255}),
-        ]
-
-        results = {
+        )
+        results: dict[str, Any] = {
             "color_control_works": False,
             "max_rgb_value": 0,
             "tested_colors": {},
         }
-
         try:
-            # First, ensure we're in FULL_DYNAMIC_RGB mode
-            await spa.request("PATCH", f"lights/{zone}", {"mode": "FULL_DYNAMIC_RGB"})
+            await self.gateway.patch_light(
+                spa,
+                zone,
+                {"mode": "FULL_DYNAMIC_RGB"},
+                timeout=self._command_timeout(),
+            )
             await asyncio.sleep(5)
-
-            successful_tests = 0
-
             for color_name, color_values in test_colors:
-                try:
-                    # Set the color
-                    await spa.request(
-                        "PATCH", f"lights/{zone}", {"color": color_values}
+                outcome = await self._test_rgb_color(
+                    spa, zone, color_name, color_values
+                )
+                results["tested_colors"][color_name] = outcome
+                if outcome["success"]:
+                    results["max_rgb_value"] = max(
+                        results["max_rgb_value"], max(outcome["actual"].values())
                     )
-                    await asyncio.sleep(5)
-
-                    # Read back the value
-                    lights = await spa.get_lights()
-                    if lights:
-                        for light in lights:
-                            if getattr(light, "zone", None) == zone:
-                                actual_r = getattr(light, "red", 0)
-                                actual_g = getattr(light, "green", 0)
-                                actual_b = getattr(light, "blue", 0)
-
-                                # Check if color was set correctly (allow small tolerance)
-                                tolerance = 5
-                                r_match = (
-                                    abs(actual_r - color_values["red"]) <= tolerance
-                                )
-                                g_match = (
-                                    abs(actual_g - color_values["green"]) <= tolerance
-                                )
-                                b_match = (
-                                    abs(actual_b - color_values["blue"]) <= tolerance
-                                )
-
-                                if r_match and g_match and b_match:
-                                    successful_tests += 1
-                                    results["tested_colors"][color_name] = {
-                                        "requested": color_values,
-                                        "actual": {
-                                            "red": actual_r,
-                                            "green": actual_g,
-                                            "blue": actual_b,
-                                        },
-                                        "success": True,
-                                    }
-
-                                    # Track maximum RGB value actually achieved
-                                    max_val = max(actual_r, actual_g, actual_b)
-                                    if max_val > results["max_rgb_value"]:
-                                        results["max_rgb_value"] = max_val
-                                else:
-                                    results["tested_colors"][color_name] = {
-                                        "requested": color_values,
-                                        "actual": {
-                                            "red": actual_r,
-                                            "green": actual_g,
-                                            "blue": actual_b,
-                                        },
-                                        "success": False,
-                                    }
-
-                                logger.debug(
-                                    f"Color test {color_name}: requested={color_values}, actual=R{actual_r} G{actual_g} B{actual_b}"
-                                )
-                                break
-
-                except Exception as e:
-                    logger.debug(f"Error testing color {color_name}: {e}")
-                    results["tested_colors"][color_name] = {
-                        "requested": color_values,
-                        "error": str(e),
-                        "success": False,
-                    }
-
-            # Consider color control working if at least 3 out of 4 colors work
-            if successful_tests >= 3:
-                results["color_control_works"] = True
-                logger.info(
-                    f"✓ RGB color control works for zone {zone} ({successful_tests}/4 colors successful, max RGB value: {results['max_rgb_value']})"
-                )
-            else:
-                logger.info(
-                    f"✗ RGB color control does not work reliably for zone {zone} ({successful_tests}/4 colors successful)"
-                )
-
-            return results
-
-        except Exception as e:
-            logger.error(f"Failed to test RGB color capability for zone {zone}: {e}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to test RGB capability for zone %s: %s", zone, exc)
             return None
 
-    async def _safe_request_with_retry(
+        successes = sum(
+            1 for outcome in results["tested_colors"].values() if outcome["success"]
+        )
+        results["color_control_works"] = successes >= 3
+        logger.info(
+            "RGB color capability for zone %s: %s/4 verified",
+            zone,
+            successes,
+        )
+        return results
+
+    async def _test_rgb_color(
         self,
         spa: Any,
-        method: str,
-        endpoint: str,
-        body: Optional[Dict] = None,
-        max_retries: int = 3,
+        zone: int,
+        color_name: str,
+        requested: dict[str, int],
+    ) -> dict[str, Any]:
+        try:
+            await self.gateway.patch_light(
+                spa,
+                zone,
+                {"color": requested},
+                timeout=self._command_timeout(),
+            )
+            await asyncio.sleep(5)
+            lights = await asyncio.wait_for(
+                spa.get_lights(), timeout=self._command_timeout()
+            )
+            actual = self._light_rgb_for_zone(lights, zone)
+            success = actual is not None and self._rgb_matches(requested, actual)
+            logger.debug(
+                "Color test %s: requested=%s actual=%s", color_name, requested, actual
+            )
+            return {"requested": requested, "actual": actual, "success": success}
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Error testing color %s: %s", color_name, exc)
+            return {"requested": requested, "error": str(exc), "success": False}
+
+    @staticmethod
+    def _light_rgb_for_zone(lights: Any, zone: int) -> dict[str, int] | None:
+        for light in lights or []:
+            if getattr(light, "zone", None) == zone:
+                return {
+                    "red": getattr(light, "red", 0),
+                    "green": getattr(light, "green", 0),
+                    "blue": getattr(light, "blue", 0),
+                }
+        return None
+
+    @staticmethod
+    def _rgb_matches(
+        requested: dict[str, int], actual: dict[str, int], tolerance: int = 5
     ) -> bool:
-        """Execute spa.request() with rate-limiting handling and exponential backoff.
+        return all(
+            abs(actual[channel] - requested[channel]) <= tolerance
+            for channel in ("red", "green", "blue")
+        )
 
-        Args:
-            spa: Spa object
-            method: HTTP method (GET, PATCH, POST, etc.)
-            endpoint: API endpoint
-            body: Request body (optional)
-            max_retries: Maximum retry attempts for 429 errors
-
-        Returns:
-            True if successful, False otherwise
-        """
-
-        for attempt in range(max_retries):
-            try:
-                await spa.request(method, endpoint, body)
-                return True
-            except Exception as e:
-                error_str = str(e)
-
-                # Check for 429 Too Many Requests
-                if "429" in error_str or "Too Many Requests" in error_str:
-                    if attempt < max_retries - 1:
-                        # Exponential backoff: 2s, 4s, 8s
-                        wait_time = 2 ** (attempt + 1)
-                        logger.warning(
-                            f"⚠️  Rate limited (429) - waiting {wait_time}s before retry {attempt + 2}/{max_retries}"
-                        )
-                        await asyncio.sleep(wait_time)
-                        continue
-                    else:
-                        logger.error(
-                            f"❌ Rate limit exceeded after {max_retries} retries"
-                        )
-                        return False
-
-                # Check for API errors that should not be retried
-                if "400" in error_str or "404" in error_str:
-                    logger.debug(f"API error {error_str} - not retrying")
-                    return False
-
-                # Other errors - fail immediately
-                logger.debug(f"Request failed: {e}")
-                return False
-
-        return False
+    def _command_timeout(self) -> float:
+        return max(
+            5.0,
+            float(
+                getattr(
+                    getattr(self.config, "safety", None),
+                    "command_timeout_seconds",
+                    10,
+                )
+            ),
+        )
 
     async def _test_light_mode(
         self,
@@ -1379,221 +835,34 @@ class ItemProber:
         brightness: int,
         zone: int,
         spa_id: str,
-    ) -> bool:
-        """Test a specific light mode/brightness combination.
+    ) -> dict[str, Any]:
+        """Test one mode through the shared discovery engine.
 
-        Args:
-            spa: Spa object
-            light_obj: Light object
-            mode_name: Name of the light mode to test
-            brightness: Brightness level (0-100)
-            zone: Zone number
-            spa_id: Spa ID
-
-        Returns:
-            True if test successful, False otherwise
+        The legacy context parameters stay in the signature temporarily so
+        older adapters and characterization tests can migrate independently.
         """
-        logger.info(f"🔍 Testing Zone {zone}: {mode_name} @ {brightness}%...")
-        try:
-            # Import LightMode enum
-            import smarttub
-
-            # Check if mode exists in enum
-            try:
-                mode_enum = getattr(smarttub.SpaLight.LightMode, mode_name, None)
-                if mode_enum is None:
-                    logger.warning(
-                        f"⚠️  Mode {mode_name} not found in LightMode enum, skipping"
+        if getattr(light_obj, "spa", None) is None:
+            light_obj.spa = spa
+        if getattr(light_obj, "zone", None) != zone:
+            return {
+                "status": LightModeTestStatus.ERROR.value,
+                "requested_intensity": brightness,
+                "verified_intensity": None,
+                "elapsed_ms": 0,
+                "error": "light zone does not match requested zone",
+            }
+        return await self.discovery_engine.test_mode(
+            light_obj,
+            mode_name,
+            wait_time=max(
+                1.0,
+                float(
+                    getattr(
+                        getattr(self.config, "safety", None),
+                        "command_timeout_seconds",
+                        10,
                     )
-                    return False
-            except Exception as e:
-                logger.warning(
-                    f"⚠️  Failed to check LightMode enum for {mode_name}: {e}"
-                )
-                return False
-
-            # Try using light.set_mode() first (includes built-in state verification)
-            # This waits automatically until the state changes or times out
-            try:
-                await light_obj.set_mode(mode_enum, brightness)
-                # If we reach here, set_mode() succeeded and verified the state change
-                logger.info(
-                    f"✓ Zone {zone}: {mode_name} @ {brightness}% successful (verified)"
-                )
-                return True
-
-            except AttributeError as e:
-                # Known bug: state.lights is None - fall back to manual verification
-                logger.debug(
-                    f"light.set_mode() failed (state.lights=None bug), using direct API: {e}"
-                )
-
-            except Exception as e:
-                error_str = str(e)
-
-                # Check for rate limiting
-                if "429" in error_str or "Too Many Requests" in error_str:
-                    logger.warning(f"⚠️  Rate limited during set_mode() for {mode_name}")
-                    await asyncio.sleep(5)
-                    return False
-
-                # Check for API rejection (invalid mode/brightness combo)
-                if "400" in error_str or "404" in error_str:
-                    logger.warning(
-                        f"❌ API rejected mode {mode_name} @ {brightness}%: {e}"
-                    )
-                    return False
-
-                # State change timeout - might be a false negative for WHEEL/RGB modes
-                # These modes report intensity=0 even when on, causing verification to fail
-                # Solution: Manually verify by checking only the mode (ignore intensity)
-                if (
-                    "State change not reflected" in error_str
-                    or "timeout" in error_str.lower()
-                ):
-                    logger.warning(
-                        f"⏱️  Mode {mode_name} timed out during set_mode() - checking manually..."
-                    )
-
-                    # Wait a bit longer and check manually
-                    await asyncio.sleep(3)
-
-                    try:
-                        # Refresh spa status (this updates all light objects automatically)
-                        await spa.get_status_full()
-
-                        # Check current mode (light_obj.mode is a LightMode enum)
-                        current_mode = light_obj.mode
-                        if current_mode is not None:
-                            current_mode_name = current_mode.name
-
-                            # Check if mode matches (ignore intensity for WHEEL/RGB modes)
-                            if current_mode_name == mode_name:
-                                logger.info(
-                                    f"✓ Zone {zone}: {mode_name} @ {brightness}% successful (manual verification)"
-                                )
-                                return True
-                            else:
-                                logger.warning(
-                                    f"❌ Mode verification failed: expected {mode_name}, got {current_mode_name}"
-                                )
-                                return False
-                        else:
-                            logger.debug(
-                                "Manual verification failed: light_obj.mode is None"
-                            )
-                    except Exception as verify_error:
-                        logger.debug(f"Manual verification failed: {verify_error}")
-
-                    logger.warning(
-                        f"❌ Mode {mode_name} could not be verified - likely not supported"
-                    )
-                    return False
-
-                # Other errors - log and fail
-                logger.warning(
-                    f"❌ Unexpected error in set_mode() for {mode_name}: {e}"
-                )
-                return False
-
-            # Fallback: Direct API call with manual verification (for state.lights=None bug)
-            body = {"intensity": brightness, "mode": mode_name}
-            success = await self._safe_request_with_retry(
-                spa, "PATCH", f"lights/{zone}", body, max_retries=3
-            )
-
-            if not success:
-                return False
-
-            # Wait and verify manually (simple approach since set_mode() failed)
-            await asyncio.sleep(5)
-
-            try:
-                lights = await spa.get_lights()
-                if not lights:
-                    logger.debug("get_lights() returned None after direct API call")
-                    return False
-
-                # Find our zone in the results
-                for light in lights:
-                    if getattr(light, "zone", None) == zone:
-                        # Check if mode matches
-                        current_mode = getattr(light, "mode", None)
-                        # Handle both string and enum mode values
-                        if hasattr(current_mode, "name"):
-                            current_mode_name = current_mode.name
-                        else:
-                            current_mode_name = (
-                                str(current_mode) if current_mode else None
-                            )
-
-                        current_intensity = getattr(light, "intensity", None)
-
-                        # Verify mode matches
-                        if mode_name == "OFF":
-                            # For OFF mode, just check mode (intensity should be 0)
-                            if current_mode_name == "OFF":
-                                logger.info(f"✓ Zone {zone}: {mode_name} successful")
-                                return True
-                            else:
-                                logger.info(
-                                    f"✗ Zone {zone}: {mode_name} failed - got {current_mode_name}"
-                                )
-                                return False
-                        else:
-                            # For non-OFF modes, check mode name
-                            # Dynamic modes (WHEEL, RGB) often have intensity=0, so don't require exact match
-                            is_dynamic_mode = mode_name in [
-                                "LOW_SPEED_WHEEL",
-                                "HIGH_SPEED_WHEEL",
-                                "HIGH_SPEED_COLOR_WHEEL",
-                                "COLOR_WHEEL",
-                                "FULL_DYNAMIC_RGB",
-                                "PARTY",
-                            ]
-
-                        if current_mode_name == mode_name:
-                            if is_dynamic_mode:
-                                # Dynamic modes: Accept any intensity (often 0%)
-                                logger.info(
-                                    f"✓ Zone {zone}: {mode_name} successful (dynamic mode @ {current_intensity}%)"
-                                )
-                                return True
-                            elif current_intensity == brightness:
-                                # Static modes: Require exact brightness match
-                                logger.info(
-                                    f"✓ Zone {zone}: {mode_name} @ {brightness}% successful"
-                                )
-                                return True
-                            else:
-                                # Static mode with wrong brightness - still supported but note it
-                                logger.info(
-                                    f"✓ Zone {zone}: {mode_name} partial (requested {brightness}%, got {current_intensity}%)"
-                                )
-                                return True
-                        else:
-                            logger.info(
-                                f"✗ Zone {zone}: {mode_name} @ {brightness}% failed - got {current_mode_name} @ {current_intensity}%"
-                            )
-                            return False
-
-                logger.debug(f"Zone {zone} not found in get_lights() response")
-                return False
-
-            except Exception as e:
-                logger.debug(f"Error during manual verification: {e}")
-                return False
-
-        except asyncio.TimeoutError:
-            logger.debug(
-                f"Timeout testing mode {mode_name} @ {brightness}% for zone {zone}"
-            )
-            return False
-        except Exception as e:
-            import traceback
-
-            logger.error(
-                f"Error testing mode {mode_name} @ {brightness}% for zone {zone}: {e}"
-            )
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return False
+                ),
+            ),
+            intensity=brightness,
+        )

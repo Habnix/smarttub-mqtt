@@ -1,0 +1,27 @@
+{% macro component_type_label(value) -%}
+{{ {
+    'jet': 'Jet',
+    'circulation': 'Zirkulation',
+    'exterior': 'Außen',
+    'interior': 'Innen',
+    'filter': 'Filter'
+}.get(value|string|lower, value|string|replace('_', ' ')|title) }}
+{%- endmacro %}
+
+{% macro pump_heading(pump_id, pump_type) -%}
+Pumpe {{ pump_id }} – {{ component_type_label(pump_type) }}
+{%- endmacro %}
+
+{% macro light_heading(zone, light_type) -%}
+{% set zone_label = zone|string|replace('zone_', '') %}
+Licht Zone {{ zone_label }} – {{ component_type_label(light_type) }}
+{%- endmacro %}
+
+{% macro component_header(label, active, active_classes, inactive_classes, component_kind, component_id) -%}
+<div class="card-header {{ active_classes if active else inactive_classes }}" data-component-header>
+    <h2 class="card-title h5 mb-0">
+        <span class="status-indicator status-{{ 'on' if active else 'off' }}" data-component-indicator aria-hidden="true"></span>
+        {{ label }}
+    </h2>
+</div>
+{%- endmacro %}

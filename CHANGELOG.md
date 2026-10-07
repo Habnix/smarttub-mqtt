@@ -5,7 +5,139 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.4.0] - 2026-10-07
+
+### Added
+- Dedicated Docker Hub installation documentation and a release runbook
+- A private Gitea Compose override using the development image
+- Primary filtration control with `NORMAL`, `NANO_MODE` and `ECO_MODE`
+- Read-only `cycleSpeed` reporting for color-changing lights
+- Observable command lifecycle with command IDs and the states `accepted`,
+  `sent`, `confirmed`, `failed`, and `unknown`
+- Non-retained MQTT command results on
+  `<base>/<spa_id>/commands/result`
+- Explicit `live`, `stale`, and `unavailable` state quality metadata in the Web
+  API and retained MQTT availability/quality topics
+- Per-pump role, current speed, speed capability, and supported-speed metadata
+- Configurable bounded command/publish queues and real buffer/drop/coalescing
+  statistics
+- A centralized `SmartTubGateway` compatibility boundary for every low-level
+  upstream request
+- An atomic recovery journal for hardware-mutating background light discovery
+- Separate unauthenticated `/live` and dependency-aware `/ready` endpoints;
+  `/health` remains as a compatibility liveness alias
+- Exact production dependency lock, Python 3.13/3.14 CI matrix, and immutable
+  wheel verification
+- Machine-readable metadata and a generated migration reference for previously
+  misleading configuration options
+- A declarative 49-entry environment override schema with generated alias,
+  parser, and boundary documentation
+- A staged MyPy strictness ratchet for 17 stable core, command, and transport
+  modules, enforced by CI and policy regression tests
+- A monotonic, line-local broad-exception policy enforced by Ruff and tests
+- A schema-versioned, path-centralized Discovery repository with atomic writes,
+  concurrent update protection, and an in-memory snapshot for synchronous MQTT
+  mapping
+- Pure state, metadata, and discovery topic encoders plus an immutable MQTT
+  message value object
+- Central log redaction and value-free payload summaries for command and audit
+  diagnostics
+- One canonical application version shared by package metadata, FastAPI,
+  CLI, MQTT metadata, and release OCI labels
+- A console script entry point: `smarttub-mqtt`
+- Starlette-compatible `httpx2` test dependency; the Python 3.14 project
+  deprecation warning is no longer emitted
+
+### Changed
+- Public releases publish to Docker Hub; Gitea main builds keep publishing only
+  the private `edge` image
+- Release tags rerun the complete CI gate before publishing; signing credentials
+  are checked before any image push and ARM64 builds use QEMU
+- Public Compose deployments pin the new `0.4.0` image
+- Migrated MQTT transport to `aiomqtt`
+- Updated `python-smarttub` to `0.0.48` and Python support to 3.13+
+- Removed obsolete migration notes and generated development artifacts
+- HTTP command responses and command history now report the observable command
+  state instead of claiming generic success
+- State polling now treats status, pump, and light reads as one complete
+  observation and preserves the last successful snapshot after read failures
+- Pump toggles use the public upstream method with state read-back, including
+  the LOW → HIGH → OFF sequence required by two-speed pumps
+- Startup remains degraded during initial MQTT/SmartTub outages and recovers
+  through background reconnect and polling
+- Retained MQTT values coalesce while offline, command results remain ordered,
+  subscriptions are restored, and shutdown receives a bounded drain period
+- Capability refresh uses `CAPABILITY_REFRESH_INTERVAL` exactly
+- Background discovery restores unfinished light state before accepting a new
+  run and clears recovery records only after verified restoration
+- Docker health checks use process liveness so temporary MQTT or SmartTub
+  outages do not cause restart loops
+- Docker installs the application as a wheel instead of an editable source tree;
+  `python-smarttub` is pinned to the verified `0.0.48` commit
+- Unauthenticated broad Web bindings emit a prominent trusted-LAN warning and
+  the deployment documentation defines VPN/HTTPS-proxy requirements
+- `WEB_UI_REFRESH_INTERVAL_SECONDS` now controls the dashboard polling interval;
+  former no-op observability, retry, and automatic-discovery options emit a
+  migration warning and are ignored for one compatibility cycle
+- Configuration errors, parsing primitives, source loading, and environment
+  overrides are separated from the application configuration dataclasses
+- MyPy now checks bodies of untyped functions globally without a blanket
+  missing-import exemption; command queues, async discovery callbacks, and
+  required snapshot structure have explicit contracts
+- Global Ruff exemptions for broad and silent exception handlers were removed;
+  dotenv, version lookup, and Basic Auth now catch concrete exception types,
+  while serializer fallbacks log instead of silently passing
+- Discovery, recovery, Web, and CLI persistence now use one repository boundary;
+  asynchronous callers offload filesystem work and MQTT snapshot mapping no
+  longer performs synchronous YAML reads
+- `MQTTTopicMapper` is now a compatibility facade over I/O-free encoders and a
+  dedicated `MqttPublisher`, the only component that calls the broker transport
+- State synchronization now has one explicit full-snapshot publication model;
+  obsolete delta merging, duplicate update/recovery paths, pending-command
+  storage, and misleading generic command reconciliation were removed
+- MQTT command transitions now log structured correlation IDs, while command
+  ingress and audit forwarding expose payload shape rather than payload values
+- Project URLs now point to the actual GitHub repository; release workflows
+  verify that the tag and canonical application version match
+- The historical entries below retain their original release wording; a
+  correction note documents paths and configuration statements that changed
+  after those releases
+
+### Fixed
+- Updated locked `multidict` to 6.9.1 and `PyJWT` to 2.15.1 after the
+  pre-release dependency audit reported vulnerabilities in the previous versions
+- Propagate SmartTub pump and light command failures instead of recording them
+  as successful commands
+- Reject unknown component IDs and unsupported heat modes explicitly
+- Preserve brightness `0` and zero-valued RGB channels
+- Prevent light requests with an unresolved `None` zone
+- Stop publishing synthetic heater-off and empty component states when the
+  SmartTub API is unavailable
+- Report LOW pumps as on/low and preserve unknown pump states and capabilities
+  instead of coercing them to off/one-speed
+- Stop assuming heater, pump, and light support when capability detection fails
+- Reject command-queue overflow visibly and enforce command execution timeouts
+- Resolve Web templates and static assets relative to the installed package so
+  wheel execution works outside the repository working directory
+- Prevent concurrent discovery writers from losing updates or exposing partial
+  YAML files
+- Prevent `CommandAuditLogger` from passing the structlog `event` argument twice
+  and failing on its first audit event
+
 ## [0.3.3] - 2026-02-01
+
+### Historical correction (2026-08-23)
+
+The release notes above are retained as a record of the 0.3.3 release snapshot.
+The current project contains `tests/`, `docs/`, and the discovery implementation
+again; the old removal statement is not a description of the current tree.
+Current discovery entry points are `src/mqtt/discovery_handler.py`,
+`src/web/discovery_router.py`, and `docs/architecture.md`. The active
+`SAFETY_COMMAND_TIMEOUT_SECONDS` option is documented in
+`docs/configuration-reference.md` and `config/.env.example`; the older 0.2.0
+note about removing it describes an intermediate historical configuration.
 
 ### Changed
 - **Dependency Update**: Upgraded python-smarttub from 0.0.45 to 0.0.46
@@ -199,7 +331,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Light mode detection in MQTT topics**: Added `detected_modes` field to light meta topics
   - Per-light meta topics now include `detected_modes: []` array from `discovered_items.yaml`
-  - Example: `smarttub-mqtt/100946961/lights/zone_1/meta` now shows which modes were successfully tested
+  - Example: `smarttub-mqtt/<spa_id>/lights/zone_1/meta` now shows which modes were successfully tested
   - Enables OpenHAB/Home Assistant to know which modes are actually supported by the hardware
   - Falls back to empty array `[]` if no detection has been run yet
 
@@ -217,7 +349,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Version MQTT topic structure**: Moved from spa-specific to global
-  - Old: `smarttub-mqtt/100946961/meta/smarttub-mqtt`
+  - Old: `smarttub-mqtt/<spa_id>/meta/smarttub-mqtt`
   - New: `smarttub-mqtt/meta/smarttub-mqtt`
   - Reasoning: Version information is system-wide, not spa-dependent
 
@@ -300,9 +432,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic authentication
 - Structured logging
 
-[0.3.0]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.3...v0.3.0
-[0.2.3]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/Habnix/smarttub-mqtt/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/Habnix/smarttub-mqtt/compare/v0.1.2...v0.2.0
+[0.4.0]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.4.0
+[0.3.3]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.3.3
+[0.3.2]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.3.2
+[0.3.1]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.3.1
+[0.3.0]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.3.0
+[0.2.3]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.2.3
+[0.2.2]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.2.2
+[0.2.1]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.2.1
+[0.2.0]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.2.0
 [0.1.2]: https://github.com/Habnix/smarttub-mqtt/releases/tag/v0.1.2

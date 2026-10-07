@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smarttub-mqtt"
-version = "0.3.3"
+dynamic = ["version"]
 description = "Bridge SmartTub OEM API with OpenHAB via MQTT, Web UI, and structured logging."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = "MIT"
 authors = [
   { name = "SmartTub MQTT Maintainers" }
@@ -15,12 +15,16 @@ authors = [
 keywords = ["smarttub", "mqtt", "openhab", "python"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Operating System :: OS Independent"
 ]
 dependencies = [
-  "python-smarttub>=0.0.46",
-  "paho-mqtt>=1.6.1",
+  "python-smarttub @ git+https://github.com/mdz/python-smarttub.git@7b15cb00c0b84b86f90454b9366c66dd2dba5057",
+  # Minimums also protect installations that do not use requirements.lock.
+  "multidict>=6.9.1",
+  "PyJWT>=2.15.1",
+  "aiomqtt>=2.4.0",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "structlog>=24.1.0",
@@ -35,18 +39,78 @@ dev = [
   "pytest-asyncio>=0.23.0",
   "pytest-cov>=6.0.0",
   "pytest-timeout>=2.3.0",
+  "httpx2==2.12.0",
   "responses>=0.25.0",
   "ruff>=0.8.0",
   "mypy>=1.11.0",
   "types-PyYAML>=6.0.0",
-  "safety>=3.0.0",
-  "bandit>=1.7.0"
+  "bandit==1.9.4",
+  "detect-secrets==1.5.0",
+  "pip-audit==2.10.1",
+  "pytest-playwright>=0.7.2"
 ]
 
+[tool.ruff.lint]
+
+[tool.mypy]
+python_version = "3.13"
+check_untyped_defs = true
+show_error_codes = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+  "src.core.command_models",
+  "src.core.command_validation",
+  "src.core.config_env",
+  "src.core.config_errors",
+  "src.core.config_loader",
+  "src.core.config_parsing",
+  "src.core.config_registry",
+  "src.core.config_sources",
+  "src.core.discovery_repository",
+  "src.core.log_safety",
+  "src.core.pump_model",
+  "src.core.runtime_health",
+  "src.core.smarttub_controller",
+  "src.core.smarttub_gateway",
+  "src.core.state_manager",
+  "src.core.state_models",
+  "src.core.state_publisher",
+  "src.mqtt.command_handlers",
+  "src.mqtt.command_manager",
+  "src.mqtt.command_router",
+  "src.mqtt.message",
+  "src.mqtt.publisher",
+  "src.mqtt.topic_encoders",
+  "src.web.command_router",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_any_generics = true
+warn_return_any = true
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+# Second ratchet in the staged 55 -> 65 -> 75 percent coverage plan. Raising
+# this value is intentionally monotonic: new code must not buy coverage by
+# weakening the existing safety net.
+fail_under = 65
+show_missing = true
+skip_covered = true
+
 [project.urls]
-Homepage = "https://github.com/smarttub-mqtt"
-Source = "https://github.com/smarttub-mqtt"
-Issues = "https://github.com/smarttub-mqtt/issues"
+Homepage = "https://github.com/Habnix/smarttub-mqtt"
+Source = "https://github.com/Habnix/smarttub-mqtt"
+Issues = "https://github.com/Habnix/smarttub-mqtt/issues"
+
+[project.scripts]
+smarttub-mqtt = "src.cli.run:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "src.core.version.__version__"}
 
 [tool.setuptools]
 py-modules = []

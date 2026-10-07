@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import secrets
-from typing import Optional
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
@@ -33,20 +35,22 @@ class BasicAuthMiddleware:
         Returns:
             Response from next handler
 
-        Raises:
-            HTTPException: 401 if authentication fails
+        Returns a response with a Basic-auth challenge when authentication
+        fails. Raising ``HTTPException`` from ``BaseHTTPMiddleware`` is handled
+        as an internal server error by Starlette, so the response must be
+        returned directly here.
         """
-        # Skip auth for health check endpoint
-        if request.url.path == "/health":
+        # Infrastructure probes expose only safe status fields.
+        if request.url.path in {"/health", "/live", "/ready"}:
             return await call_next(request)
 
         # Get credentials from Authorization header
         credentials = await self._get_credentials(request)
 
         if not credentials:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required",
+                content={"detail": "Authentication required"},
                 headers={"WWW-Authenticate": "Basic"},
             )
 
@@ -59,18 +63,16 @@ class BasicAuthMiddleware:
         )
 
         if not (username_correct and password_correct):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials",
+                content={"detail": "Invalid credentials"},
                 headers={"WWW-Authenticate": "Basic"},
             )
 
         # Authentication successful, proceed to handler
         return await call_next(request)
 
-    async def _get_credentials(
-        self, request: Request
-    ) -> Optional[HTTPBasicCredentials]:
+    async def _get_credentials(self, request: Request) -> HTTPBasicCredentials | None:
         """Extract credentials from Authorization header.
 
         Args:
@@ -89,13 +91,11 @@ class BasicAuthMiddleware:
                 return None
 
             # Decode base64 credentials
-            import base64
-
-            decoded = base64.b64decode(credentials).decode("utf-8")
+            decoded = base64.b64decode(credentials, validate=True).decode("utf-8")
             username, password = decoded.split(":", 1)
 
             return HTTPBasicCredentials(username=username, password=password)
-        except Exception:
+        except (ValueError, UnicodeDecodeError, binascii.Error):
             return None
 
 

@@ -6,11 +6,13 @@ with observer pattern for real-time updates.
 """
 
 import asyncio
-from dataclasses import dataclass, field, asdict
+import inspect
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Callable, Dict, Any
-import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +38,8 @@ class DiscoveryMode(str, Enum):
 class DiscoveryProgress:
     """Progress tracking for discovery process."""
 
-    current_spa: Optional[str] = None
-    current_light: Optional[str] = None
+    current_spa: str | None = None
+    current_light: str | None = None
 
     lights_total: int = 0
     lights_tested: int = 0
@@ -47,7 +49,7 @@ class DiscoveryProgress:
 
     percentage: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
 
@@ -66,12 +68,12 @@ class DiscoveryProgress:
 class DiscoveryResults:
     """Discovery results container."""
 
-    spas: Dict[str, Any] = field(default_factory=dict)
-    yaml_path: Optional[str] = None
+    spas: dict[str, Any] = field(default_factory=dict)
+    yaml_path: str | None = None
     total_lights: int = 0
     total_modes_detected: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "spas": self.spas,
@@ -90,17 +92,17 @@ class DiscoveryState:
     """
 
     status: DiscoveryStatus = DiscoveryStatus.IDLE
-    mode: Optional[DiscoveryMode] = None
+    mode: DiscoveryMode | None = None
 
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
     progress: DiscoveryProgress = field(default_factory=DiscoveryProgress)
-    results: Optional[DiscoveryResults] = None
+    results: DiscoveryResults | None = None
 
-    error: Optional[str] = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "status": self.status.value,
@@ -151,7 +153,7 @@ class DiscoveryStateManager:
         """Initialize state manager."""
         self._state = DiscoveryState()
         self._lock = asyncio.Lock()
-        self._observers: List[Callable[[DiscoveryState], None]] = []
+        self._observers: list[Callable[[DiscoveryState], Awaitable[Any] | Any]] = []
 
         logger.debug("DiscoveryStateManager initialized")
 
@@ -174,7 +176,7 @@ class DiscoveryStateManager:
                 error=self._state.error,
             )
 
-    async def update_state(self, updates: Dict[str, Any]) -> DiscoveryState:
+    async def update_state(self, updates: dict[str, Any]) -> DiscoveryState:
         """
         Update discovery state atomically.
 
@@ -282,7 +284,7 @@ class DiscoveryStateManager:
         logger.debug("State reset to idle")
         return updated_state
 
-    def subscribe(self, callback: Callable[[DiscoveryState], None]):
+    def subscribe(self, callback: Callable[[DiscoveryState], Awaitable[Any] | Any]):
         """
         Subscribe to state changes.
 
@@ -294,7 +296,7 @@ class DiscoveryStateManager:
             self._observers.append(callback)
             logger.debug(f"Observer subscribed: {callback.__name__}")
 
-    def unsubscribe(self, callback: Callable[[DiscoveryState], None]):
+    def unsubscribe(self, callback: Callable[[DiscoveryState], Awaitable[Any] | Any]):
         """
         Unsubscribe from state changes.
 
@@ -318,17 +320,17 @@ class DiscoveryStateManager:
         logger.debug(f"Notifying {len(self._observers)} observers")
 
         # Call all observers concurrently
-        tasks = []
+        tasks: list[Awaitable[Any]] = []
         for observer in self._observers:
             try:
                 # Check if observer is async
-                if asyncio.iscoroutinefunction(observer):
+                if inspect.iscoroutinefunction(observer):
                     tasks.append(observer(state))
                 else:
                     # Sync observer - run in executor
                     loop = asyncio.get_event_loop()
                     tasks.append(loop.run_in_executor(None, observer, state))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Error notifying observer {observer.__name__}: {e}")
 
         # Wait for all observers
@@ -337,12 +339,12 @@ class DiscoveryStateManager:
 
     async def update_progress(
         self,
-        current_spa: Optional[str] = None,
-        current_light: Optional[str] = None,
-        lights_total: Optional[int] = None,
-        lights_tested: Optional[int] = None,
-        modes_total: Optional[int] = None,
-        modes_tested: Optional[int] = None,
+        current_spa: str | None = None,
+        current_light: str | None = None,
+        lights_total: int | None = None,
+        lights_tested: int | None = None,
+        modes_total: int | None = None,
+        modes_tested: int | None = None,
     ) -> DiscoveryState:
         """
         Convenient method to update progress fields.
@@ -358,7 +360,7 @@ class DiscoveryStateManager:
         Returns:
             Updated state
         """
-        progress_updates = {}
+        progress_updates: dict[str, Any] = {}
 
         if current_spa is not None:
             progress_updates["current_spa"] = current_spa
@@ -375,7 +377,7 @@ class DiscoveryStateManager:
 
         return await self.update_state({"progress": progress_updates})
 
-    def get_state_sync(self) -> Dict[str, Any]:
+    def get_state_sync(self) -> dict[str, Any]:
         """
         Get state synchronously (for non-async contexts).
 

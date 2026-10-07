@@ -1,0 +1,32 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+        <a class="navbar-brand" href="/">💧 SmartTub MQTT Bridge</a>
+        <button
+            class="navbar-toggler"
+            type="button"
+            data-navigation-toggle
+            aria-controls="main-navigation"
+            aria-expanded="false"
+            aria-label="Navigation öffnen"
+        >
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div id="main-navigation" class="smarttub-navigation" data-navigation-menu>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link {% if active_page == 'overview' %}active{% endif %}" href="/"{% if active_page == 'overview' %} aria-current="page"{% endif %}>Übersicht</a>
+                <a class="nav-link {% if active_page == 'controls' %}active{% endif %}" href="/controls"{% if active_page == 'controls' %} aria-current="page"{% endif %}>Steuerung</a>
+                <a class="nav-link {% if active_page == 'discovery' %}active{% endif %}" href="/discovery"{% if active_page == 'discovery' %} aria-current="page"{% endif %}>Erkennung</a>
+            </div>
+            <div class="nav-status" aria-label="Systeminformationen">
+                {% if versions is defined %}
+                <span><small>smarttub-mqtt {{ versions.smarttub_mqtt }}</small></span>
+                {% endif %}
+                <span><small>Whirlpool: {{ config.smarttub.device_id or 'wird bestimmt' }}</small></span>
+                {% if last_updated is defined %}
+                <span>Datenstand: <span id="last-updated" data-timestamp="{{ last_updated }}">{{ last_updated }}</span></span>
+                {% endif %}
+            </div>
+            <a class="nav-link" href="/api/state" target="_blank" rel="noopener">API</a>
+        </div>
+    </div>
+</nav>

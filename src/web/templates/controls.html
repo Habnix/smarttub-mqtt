@@ -1,142 +1,85 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartTub MQTT Bridge - Controls</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .control-card {
-            transition: all 0.3s ease;
-        }
-        .control-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .btn-control {
-            min-width: 120px;
-            margin: 5px;
-        }
-        .status-badge {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-        }
-        .command-feedback {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-        }
-        .command-success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-        .command-error {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-    </style>
-</head>
-<body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-water me-2"></i>
-                SmartTub MQTT Bridge
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/">Overview</a>
-                <a class="nav-link active" href="/controls">
-                    Controls <span class="badge bg-warning text-dark">BETA</span>
-                </a>
-                <a class="nav-link" href="/discovery">Discovery</a>
-                <a class="nav-link" href="/api/state" target="_blank">API</a>
-            </div>
-        </div>
-    </nav>
+{% extends "base.html" %}
+{% from "_component_cards.html" import light_heading, pump_heading %}
+{% set active_page = 'controls' %}
 
+{% block title %}SmartTub MQTT Bridge – Steuerung{% endblock %}
+
+{% block body_attributes %}data-state-available="{{ 'true' if state_available else 'false' }}" data-state-stale="{{ 'true' if state_is_stale else 'false' }}"{% endblock %}
+
+{% block content %}
     <div class="container mt-4">
         <!-- Beta Warning Banner -->
         <div class="row mb-4">
             <div class="col-12">
-                <div class="alert alert-warning border-warning" role="alert">
-                    <h5 class="alert-heading">
-                        <i class="fas fa-flask me-2"></i>
-                        <strong>BETA FEATURE</strong>
-                    </h5>
-                    <p class="mb-2">
-                        This control panel is currently in <strong>beta</strong> and has known limitations:
-                    </p>
-                    <ul class="mb-2">
-                        <li>Temperature control uses hardcoded default (37°C) instead of current target temperature</li>
-                        <li>Only circulation pump (CP) is shown - jet pumps (P1, P2) are not yet available</li>
-                        <li>Light controls are not yet implemented</li>
-                        <li>Heating mode changes may not work correctly</li>
-                        <li>Real-time state updates are not yet integrated</li>
-                    </ul>
-                    <p class="mb-0">
-                        <strong>Recommended:</strong> Use MQTT topics directly for reliable control until this feature is complete.
-                        <br>
-                        <small class="text-muted">Planned for v0.3.1 - Full state integration and working controls</small>
-                    </p>
+                <div class="alert alert-info border-info" role="alert">
+                    MQTT bleibt die empfohlene Schnittstelle für Automatisierungen.
                 </div>
             </div>
         </div>
 
         <div class="row">
             <div class="col-12">
-                <h1 class="mb-4">SmartTub Control Panel</h1>
-                <p class="text-muted">Send commands to control your SmartTub whirlpool system</p>
+                <h1 class="mb-2">Whirlpool-Steuerung</h1>
+                <p class="text-muted mb-4">Steuere den konfigurierten Whirlpool. Automatisierungen bleiben über MQTT verfügbar.</p>
+                <div class="alert {% if state_available and not state_is_stale %}alert-success{% else %}alert-warning{% endif %}" role="status">
+                    {% if state_available and not state_is_stale %}
+                    Statusdaten aktuell. Befehle werden an den konfigurierten Whirlpool gesendet.
+                    {% elif state_available %}
+                    Statusdaten veraltet. Prüfe die Verbindung, bevor du einen Befehl sendest.
+                    {% else %}
+                    Noch keine Statusdaten verfügbar. Die Steuerung kann möglicherweise nicht ausgeführt werden.
+                    {% endif %}
+                </div>
             </div>
         </div>
 
-        {% if not capabilities %}
+        {% if not capability_available %}
         <div class="row mb-4">
             <div class="col-12">
                 <div class="alert alert-info">
-                    <h5><i class="fas fa-info-circle me-2"></i>No Spa Capabilities Detected</h5>
-                    <p>The system is still detecting your SmartTub capabilities. Controls will appear here once capabilities are discovered.</p>
-                    <p>You can check the <a href="/api/capabilities">capabilities API endpoint</a> for current status.</p>
+                    <h5>Funktionen werden noch erkannt</h5>
+                    <p>Die Steuerung erscheint, sobald die verfügbaren Komponenten ermittelt wurden.</p>
+                    <p class="mb-0">Der technische Status ist über die <a href="/api/capabilities">Capabilities-API</a> verfügbar.</p>
                 </div>
             </div>
         </div>
         {% endif %}
 
         <!-- Temperature Control -->
-        {% for spa_id, spa_caps in capabilities.items() %}
-        {% if spa_caps.supported_features.heater %}
+        {% if capability.supported_features.heater %}
+        {% set heater = state.components.heater|default({}) %}
+        {% set heater_capability = capability.get('heater') or {} %}
+        {% set temperature_range = heater_capability.get('temperature_range') or {} %}
         <div class="row mb-4">
             <div class="col-md-6">
                 <div class="card control-card">
                     <div class="card-header bg-danger text-white">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-thermometer-half me-2"></i>
-                            Temperature Control - {{ spa_caps.model or spa_id }}
-                        </h5>
+                        <h2 class="card-title h5 mb-0">
+                            Temperatur – {{ spa_label }}
+                        </h2>
                     </div>
                     <div class="card-body">
-                        <form hx-post="/api/commands/set_temperature" hx-target="#temp-feedback-{{ spa_id }}" hx-swap="innerHTML">
-                            <input type="hidden" name="spa_id" value="{{ spa_id }}">
+                        <form action="/api/commands/set_temperature" data-command-form data-feedback-target="temp-feedback">
                             <div class="mb-3">
-                                <label for="temperature-{{ spa_id }}" class="form-label">Set Temperature (°C)</label>
+                                <label for="temperature" class="form-label">Zieltemperatur (°C)</label>
                                 <div class="input-group">
-                                    <input type="number" class="form-control" id="temperature-{{ spa_id }}" name="temperature"
-                                           min="20" max="40" step="0.5" value="37.0" required>
+                                    <input type="number" class="form-control" id="temperature" name="temperature"
+                                           {% if temperature_range.get('min') is not none %}min="{{ temperature_range.get('min') }}"{% endif %}
+                                           {% if temperature_range.get('max') is not none %}max="{{ temperature_range.get('max') }}"{% endif %}
+                                           step="0.5"
+                                           {% if heater.target_temperature is defined and heater.target_temperature is not none %}value="{{ heater.target_temperature }}"{% endif %}
+                                           required>
                                     <span class="input-group-text">°C</span>
                                 </div>
-                                <div class="form-text">Range: 20°C - 40°C</div>
+                                {% if temperature_range.get('min') is not none and temperature_range.get('max') is not none %}
+                                <div class="form-text">Bereich: {{ temperature_range.get('min') }} °C bis {{ temperature_range.get('max') }} °C</div>
+                                {% endif %}
                             </div>
                             <button type="submit" class="btn btn-danger btn-control">
-                                <i class="fas fa-temperature-high me-2"></i>
-                                Set Temperature
+                                Temperatur setzen
                             </button>
                         </form>
-                        <div id="temp-feedback-{{ spa_id }}" class="command-feedback"></div>
+                        <div id="temp-feedback" class="command-feedback" role="status" aria-live="polite"></div>
                     </div>
                 </div>
             </div>
@@ -145,158 +88,192 @@
             <div class="col-md-6">
                 <div class="card control-card">
                     <div class="card-header bg-warning text-dark">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-fire me-2"></i>
-                            Heating Mode - {{ spa_caps.model or spa_id }}
-                        </h5>
+                        <h2 class="card-title h5 mb-0">
+                            Heizmodus – {{ spa_label }}
+                        </h2>
                     </div>
                     <div class="card-body">
-                        <form hx-post="/api/commands/set_heat_mode" hx-target="#heat-feedback-{{ spa_id }}" hx-swap="innerHTML">
-                            <input type="hidden" name="spa_id" value="{{ spa_id }}">
+                        <form action="/api/commands/set_heat_mode" data-command-form data-feedback-target="heat-feedback">
                             <div class="mb-3">
-                                <label for="heat_mode-{{ spa_id }}" class="form-label">Select Heating Mode</label>
-                                <select class="form-select" id="heat_mode-{{ spa_id }}" name="mode" required>
-                                    <option value="AUTO">Auto</option>
-                                    <option value="ECONOMY">Economy</option>
-                                    <option value="DAY">Day</option>
-                                    <option value="READY">Ready</option>
-                                    <option value="REST">Rest</option>
+                                <label for="heat-mode" class="form-label">Heizmodus wählen</label>
+                                <select class="form-select" id="heat-mode" name="mode" required>
+                                    <option value="AUTO">Automatisch</option>
+                                    <option value="ECONOMY">Energiesparmodus</option>
+                                    <option value="DAY">Tagbetrieb</option>
+                                    <option value="READY">Bereit</option>
+                                    <option value="REST">Ruhebetrieb</option>
                                 </select>
                             </div>
                             <button type="submit" class="btn btn-warning btn-control">
-                                <i class="fas fa-fire me-2"></i>
-                                Set Mode
+                                Heizmodus setzen
                             </button>
                         </form>
-                        <div id="heat-feedback-{{ spa_id }}" class="command-feedback"></div>
+                        <div id="heat-feedback" class="command-feedback" role="status" aria-live="polite"></div>
                     </div>
                 </div>
             </div>
         </div>
         {% endif %}
-        {% endfor %}
 
-        <!-- Pump and Light Controls Row -->
-        {% for spa_id, spa_caps in capabilities.items() %}
+        <!-- Primary Filtration Control -->
+        {% if capability.supported_features.filtration %}
         <div class="row mb-4">
-            <!-- Pump Control -->
-            {% if spa_caps.supported_features.pump %}
             <div class="col-md-6">
                 <div class="card control-card">
+                    <div class="card-header bg-info text-dark">
+                        <h2 class="card-title h5 mb-0">
+                            Hauptfilterung – {{ spa_label }}
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <form action="/api/commands/set_filtration_mode" data-command-form data-feedback-target="filtration-feedback">
+                            <div class="mb-3">
+                                <label for="filtration-mode" class="form-label">Filtermodus wählen</label>
+                                <select class="form-select" id="filtration-mode" name="mode" required>
+                                    {% for mode in capability.filtration.modes %}
+                                    {% set mode_labels = {
+                                        'NORMAL': 'Normal',
+                                        'NANO_MODE': 'Nano-Modus',
+                                        'ECO_MODE': 'Eco-Modus'
+                                    } %}
+                                    <option value="{{ mode }}">{{ mode_labels.get(mode, mode|replace('_', ' ')|title) }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-info btn-control">
+                                Filtermodus setzen
+                            </button>
+                        </form>
+                        <div id="filtration-feedback" class="command-feedback" role="status" aria-live="polite"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Per-component controls use the IDs from the latest state snapshot. -->
+        {% if capability.supported_features.pump and state.components.pumps %}
+        <div class="row mb-4">
+            {% for pump in state.components.pumps %}
+            <div class="col-md-6 mb-4">
+                <div class="card control-card">
                     <div class="card-header bg-primary text-white position-relative">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-water me-2"></i>
-                            Circulation Pump - {{ spa_caps.model or spa_id }}
-                        </h5>
-                        <span class="badge bg-warning text-dark status-badge">Beta</span>
+                        <h2 class="card-title h5 mb-0">
+                            {{ pump_heading(pump.id, pump.type) }}
+                        </h2>
                     </div>
                     <div class="card-body">
                         <div class="d-grid gap-2">
                             <button class="btn btn-success btn-control"
-                                    hx-post="/api/commands/set_pump_state"
-                                    hx-vals='{"state": "on", "spa_id": "{{ spa_id }}"}'
-                                    hx-target="#pump-feedback-{{ spa_id }}"
-                                    hx-swap="innerHTML">
-                                <i class="fas fa-play me-2"></i>
-                                Turn On
+                                    data-command-button="/api/commands/set_pump_state"
+                                    data-command-payload='{"state": "on", "pump_id": "{{ pump.id }}"}'
+                                    data-feedback-target="pump-feedback-{{ pump.id }}">
+                                Einschalten
                             </button>
                             <button class="btn btn-secondary btn-control"
-                                    hx-post="/api/commands/set_pump_state"
-                                    hx-vals='{"state": "off", "spa_id": "{{ spa_id }}"}'
-                                    hx-target="#pump-feedback-{{ spa_id }}"
-                                    hx-swap="innerHTML">
-                                <i class="fas fa-stop me-2"></i>
-                                Turn Off
+                                    data-command-button="/api/commands/set_pump_state"
+                                    data-command-payload='{"state": "off", "pump_id": "{{ pump.id }}"}'
+                                    data-feedback-target="pump-feedback-{{ pump.id }}">
+                                Ausschalten
                             </button>
                         </div>
-                        <div id="pump-feedback-{{ spa_id }}" class="command-feedback"></div>
-                        <div class="alert alert-info mt-3">
-                            <small><i class="fas fa-info-circle me-1"></i>
-                            Pump control may not be fully implemented yet. Commands are logged for future development.</small>
-                        </div>
+                        <div id="pump-feedback-{{ pump.id }}" class="command-feedback" role="status" aria-live="polite"></div>
                     </div>
                 </div>
             </div>
-            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
 
-            <!-- Light Control -->
-            {% if spa_caps.supported_features.light %}
-            <div class="col-md-6">
+        {% if capability.supported_features.light and state.components.lights %}
+        <div class="row mb-4">
+            {% for light in state.components.lights %}
+            <div class="col-md-6 mb-4">
                 <div class="card control-card">
-                    <div class="card-header bg-info text-white position-relative">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-lightbulb me-2"></i>
-                            Lighting - {{ spa_caps.model or spa_id }}
-                        </h5>
-                        <span class="badge bg-warning text-dark status-badge">Beta</span>
+                    <div class="card-header bg-info text-dark position-relative">
+                        <h2 class="card-title h5 mb-0">
+                            {{ light_heading(light.zone|default(light.id, true), light.type) }}
+                        </h2>
                     </div>
                     <div class="card-body">
-                        <div class="d-grid gap-2 mb-3">
-                            <button class="btn btn-success btn-control"
-                                    hx-post="/api/commands/set_light_state"
-                                    hx-vals='{"state": "on", "spa_id": "{{ spa_id }}"}'
-                                    hx-target="#light-feedback-{{ spa_id }}"
-                                    hx-swap="innerHTML">
-                                <i class="fas fa-lightbulb me-2"></i>
-                                Turn On
-                            </button>
-                            <button class="btn btn-secondary btn-control"
-                                    hx-post="/api/commands/set_light_state"
-                                    hx-vals='{"state": "off", "spa_id": "{{ spa_id }}"}'
-                                    hx-target="#light-feedback-{{ spa_id }}"
-                                    hx-swap="innerHTML">
-                                <i class="fas fa-moon me-2"></i>
-                                Turn Off
-                            </button>
-                        </div>
+                        {% set current_light_mode = light.mode|default('', true)|upper %}
+                        {% set rgb_mode = current_light_mode == 'FULL_DYNAMIC_RGB' %}
 
-                        <form hx-post="/api/commands/set_light_color" hx-target="#color-feedback-{{ spa_id }}" hx-swap="innerHTML" class="mb-3">
-                            <input type="hidden" name="spa_id" value="{{ spa_id }}">
-                            <label for="light_color-{{ spa_id }}" class="form-label">Light Color</label>
+                        <div data-light-rgb-controls data-light-id="{{ light.id }}" class="{% if not rgb_mode %}d-none{% endif %}">
+                        <form action="/api/commands/set_light_color" data-command-form data-feedback-target="color-feedback-{{ light.id }}" class="mb-3">
+                            <input type="hidden" name="light_id" value="{{ light.id }}">
+                            <label for="light-color-{{ light.id }}" class="form-label">Lichtfarbe</label>
                             <div class="input-group">
-                                <input type="color" class="form-control form-control-color" id="light_color-{{ spa_id }}" name="color" value="#ffffff">
-                                <button type="submit" class="btn btn-outline-primary">Set Color</button>
+                                <input type="color" class="form-control form-control-color" id="light-color-{{ light.id }}" name="color" value="{{ light.color|default('#ffffff') }}">
+                                <button type="submit" class="btn btn-outline-primary">Farbe setzen</button>
                             </div>
                         </form>
-                        <div id="color-feedback-{{ spa_id }}" class="command-feedback"></div>
-
-                        <form hx-post="/api/commands/set_light_brightness" hx-target="#brightness-feedback-{{ spa_id }}" hx-swap="innerHTML">
-                            <input type="hidden" name="spa_id" value="{{ spa_id }}">
-                            <label for="brightness-{{ spa_id }}" class="form-label">Brightness: <span id="brightness-value-{{ spa_id }}">50</span>%</label>
-                            <input type="range" class="form-range" id="brightness-{{ spa_id }}" name="brightness"
-                                   min="0" max="100" value="50" step="10"
-                                   oninput="document.getElementById('brightness-value-{{ spa_id }}').textContent = this.value">
-                            <button type="submit" class="btn btn-outline-primary btn-sm">Set Brightness</button>
-                        </form>
-                        <div id="brightness-feedback-{{ spa_id }}" class="command-feedback"></div>
-
-                        <div id="light-feedback-{{ spa_id }}" class="command-feedback"></div>
-                        <div class="alert alert-info mt-3">
-                            <small><i class="fas fa-info-circle me-1"></i>
-                            Light control may not be fully implemented yet. Commands are logged for future development.</small>
+                        <div id="color-feedback-{{ light.id }}" class="command-feedback" role="status" aria-live="polite"></div>
                         </div>
+
+                        {% set detected_modes = light.detected_modes|default([], true) %}
+                        {% if detected_modes %}
+                        <form action="/api/commands/set_light_mode" data-light-mode-form data-feedback-target="light-mode-feedback-{{ light.id }}" class="mb-3">
+                            <input type="hidden" name="light_id" value="{{ light.id }}">
+                            <label for="light-mode-{{ light.id }}" class="form-label">Lichtmodus wählen</label>
+                            <select class="form-select" id="light-mode-{{ light.id }}" name="mode" data-light-mode-select data-current-mode="{{ current_light_mode }}" required>
+                                {% set light_mode_labels = {
+                                    'OFF': 'Aus',
+                                    'ON': 'Ein (weiß)',
+                                    'WHITE': 'Weiß',
+                                    'PURPLE': 'Violett',
+                                    'FULL_DYNAMIC_RGB': 'Dynamische RGB-Farbe',
+                                    'HIGH_SPEED_COLOR_WHEEL': 'Farbwechsel schnell',
+                                    'HIGH_SPEED_WHEEL': 'Farbrad schnell',
+                                    'LOW_SPEED_WHEEL': 'Farbrad langsam'
+                                } %}
+                                {% for mode in detected_modes %}
+                                <option value="{{ mode }}"{% if light.mode|default('', true)|upper == mode %} selected{% endif %}>{{ light_mode_labels.get(mode, mode|replace('_', ' ')|title) }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Nur durch die letzte Erkennung bestätigte Modi werden angeboten.</div>
+                            <div class="form-text">Die Auswahl wird sofort an den Whirlpool übertragen.</div>
+                        </form>
+                        <div id="light-mode-feedback-{{ light.id }}" class="command-feedback" role="status" aria-live="polite"></div>
+                        {% endif %}
+
+                        <div data-light-rgb-unavailable data-light-id="{{ light.id }}" class="alert alert-light border {% if rgb_mode %}d-none{% endif %}">
+                            Helligkeit und Farbe werden über RGB gesteuert. Wähle dafür den Modus <strong>Dynamische RGB-Farbe</strong>.
+                        </div>
+                        <div data-light-rgb-controls data-light-id="{{ light.id }}" class="{% if not rgb_mode %}d-none{% endif %}">
+                        <form action="/api/commands/set_light_brightness" data-command-form data-feedback-target="brightness-feedback-{{ light.id }}">
+                            <input type="hidden" name="light_id" value="{{ light.id }}">
+                            <label for="brightness-{{ light.id }}" class="form-label">Helligkeit: <span id="brightness-value-{{ light.id }}">{{ light.brightness|default(50) }}</span>%</label>
+                            <input type="range" class="form-range" id="brightness-{{ light.id }}" name="brightness"
+                                   min="0" max="100" value="{{ light.brightness|default(50) }}" step="10"
+                                   data-range-output="brightness-value-{{ light.id }}">
+                            <button type="submit" class="btn btn-outline-primary btn-sm">Helligkeit setzen</button>
+                        </form>
+                        <div id="brightness-feedback-{{ light.id }}" class="command-feedback" role="status" aria-live="polite"></div>
+                        </div>
+
+                        <div id="light-feedback-{{ light.id }}" class="command-feedback" role="status" aria-live="polite"></div>
                     </div>
                 </div>
             </div>
-            {% endif %}
+            {% endfor %}
         </div>
-        {% endfor %}
+        {% endif %}
 
         <!-- Command History -->
         <div class="row">
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        <h5 class="card-title mb-0">
-                            <i class="fas fa-history me-2"></i>
-                            Recent Commands
-                        </h5>
+                        <h2 class="card-title h5 mb-0">
+                            Letzte Befehle
+                        </h2>
                     </div>
                     <div class="card-body">
-                        <div id="command-history" hx-get="/api/commands/history" hx-trigger="load, every 10s">
+                        <div id="command-history">
                             <div class="text-center text-muted">
                                 <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                Loading command history...
+                                Befehlsverlauf wird geladen …
                             </div>
                         </div>
                     </div>
@@ -305,37 +282,4 @@
         </div>
     </div>
 
-    <!-- HTMX Response Handler -->
-    <script>
-        // Handle command responses
-        document.body.addEventListener('htmx:afterRequest', function(evt) {
-            const target = evt.detail.target;
-            if (target && target.classList.contains('command-feedback')) {
-                target.style.display = 'block';
-                // Auto-hide after 5 seconds
-                setTimeout(() => {
-                    target.style.display = 'none';
-                }, 5000);
-            }
-        });
-
-        // Add success/error styling based on response
-        document.body.addEventListener('htmx:beforeSwap', function(evt) {
-            const target = evt.detail.target;
-            if (target && target.classList.contains('command-feedback')) {
-                const response = evt.detail.xhr.response;
-                if (response && response.includes('success')) {
-                    target.classList.add('command-success');
-                    target.classList.remove('command-error');
-                } else if (response && response.includes('error')) {
-                    target.classList.add('command-error');
-                    target.classList.remove('command-success');
-                }
-            }
-        });
-    </script>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://kit.fontawesome.com/your-fontawesome-kit.js" crossorigin="anonymous"></script>
-</body>
-</html>
+{% endblock %}
